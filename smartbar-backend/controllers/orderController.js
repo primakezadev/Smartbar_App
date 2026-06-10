@@ -74,15 +74,14 @@ const OrderController = {
       res.status(500).json({ success: false, error: error.message });
     }
   },
-
-  getWaiterDashboard: async (req, res) => {
+getWaiterDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
         SELECT o.id AS order_id, o.table_number, o.status AS master_status,
                o.total_price, o.created_at, u.name AS waiter_name,
                json_agg(json_build_object(
                  'item_id', oi.item_id, 'name', oi.name,
-                 'quantity', oi.quantity, 'type', oi.type, 'status', oi.status
+                 'quantity', oi.quantity, 'type', oi.type
                )) AS items
         FROM orders o
         LEFT JOIN users u ON o.assigned_server_id = u.id
