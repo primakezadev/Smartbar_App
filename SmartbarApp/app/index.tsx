@@ -1,65 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { Redirect } from 'expo-router';
+import React, { useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { View, ActivityIndicator, Text } from 'react-native';
+import SplashScreenComponent from './SplashScreen';
 
 export default function Index() {
-  const [target, setTarget] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    const check = async () => {
-      // Wait 5 seconds for splash screen
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
+    const timer = setTimeout(async () => {
       try {
         const session = await SecureStore.getItemAsync('userSession');
-
         if (session) {
           const user = JSON.parse(session);
           const role = user.role?.toLowerCase();
-
-          if (role === 'waiter') setTarget('/(tabs)/Waiter');
-          else if (role === 'kitchen') setTarget('/(tabs)/Kitchen');
-          else if (role === 'manager') setTarget('/(tabs)/Manager');
-          else if (role === 'counter') setTarget('/(tabs)/Counter');
-          else setTarget('/(tabs)');
+          if (role === 'waiter')       router.replace('/(tabs)/Waiter');
+          else if (role === 'kitchen') router.replace('/(tabs)/Kitchen');
+          else if (role === 'manager') router.replace('/(tabs)/Manager');
+          else if (role === 'counter') router.replace('/(tabs)/Counter');
+          else                         router.replace('/(tabs)');
         } else {
-          setTarget('/Auth');
+          router.replace('/Auth');
         }
       } catch {
-        setTarget('/Auth');
+        router.replace('/Auth');
       }
-    };
+    }, 5000);
 
-    check();
+    return () => clearTimeout(timer);
   }, []);
 
-  // Splash Screen
-  if (!target) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: '#09090B',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Text
-          style={{
-            color: '#D48135',
-            fontSize: 32,
-            fontWeight: 'bold',
-            marginBottom: 20,
-          }}
-        >
-          🍹 SmartBar
-        </Text>
-
-        <ActivityIndicator size="large" color="#D48135" />
-      </View>
-    );
-  }
-
-  return <Redirect href={target as any} />;
+  return <SplashScreenComponent />;
 }
