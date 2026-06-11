@@ -74,7 +74,8 @@ const OrderController = {
       res.status(500).json({ success: false, error: error.message });
     }
   },
-getWaiterDashboard: async (req, res) => {
+
+  getWaiterDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
         SELECT o.id AS order_id, o.table_number, o.status AS master_status,
@@ -97,7 +98,6 @@ getWaiterDashboard: async (req, res) => {
     }
   },
 
-  // ✅ FIXED: Only 'preparing' orders, only kitchen items, assigned waiter only
   getKitchenDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
@@ -113,7 +113,6 @@ getWaiterDashboard: async (req, res) => {
         GROUP BY o.id, u.name
         ORDER BY o.created_at ASC;
       `);
-
       console.log("=== KITCHEN DASHBOARD === user:", req.user?.role, "rows:", result.rows.length);
       const tickets = result.rows.filter(t => t.items !== null);
       res.status(200).json({ success: true, tickets });
@@ -123,7 +122,6 @@ getWaiterDashboard: async (req, res) => {
     }
   },
 
-  // ✅ FIXED: Only 'preparing' orders, only drink items, assigned waiter only
   getBarDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
@@ -139,7 +137,6 @@ getWaiterDashboard: async (req, res) => {
         GROUP BY o.id, u.name
         ORDER BY o.created_at ASC;
       `);
-
       console.log("=== BAR DASHBOARD === user:", req.user?.role, "rows:", result.rows.length);
       const tickets = result.rows.filter(t => t.items !== null);
       res.status(200).json({ success: true, tickets });
@@ -158,14 +155,43 @@ getWaiterDashboard: async (req, res) => {
       const updatedOrder = await OrderService.claimActiveTicket(id, server_id, status || 'preparing');
       console.log("Updated:", JSON.stringify(updatedOrder));
 
+      if (!updatedOrder) {
+        return res.status(404).json({ success: false, error: "Order not found." });
+      }
+
+      // ✅ FIXED: using phone_number column
+      const waiterRes = await pool.query(
+        `SELECT name, phone_number FROM users WHERE id = $1`,
+        [server_id]
+      );
+      const waiterName = waiterRes.rows[0]?.name || "Your Waiter";
+      const waiterPhone = waiterRes.rows[0]?.phone_number || "";
+
+      // Fetch the client user_id from the order
+      const orderRes = await pool.query(
+        `SELECT user_id FROM orders WHERE id = $1`,
+        [id]
+      );
+      const clientUserId = orderRes.rows[0]?.user_id;
+
+      // Emit to the client's private socket room
+      const io = req.app.get('io');
+      if (io && clientUserId) {
+        io.to(`user_${clientUserId}`).emit('order_claimed_by_waiter', {
+          id: parseInt(id),
+          status: status || 'preparing',
+          waiter_name: waiterName,
+          waiter_phone: waiterPhone
+        });
+        console.log(`📡 Emitted to user_${clientUserId} | Waiter: ${waiterName} | Phone: ${waiterPhone}`);
+      }
+
       const itemCheck = await pool.query(
         `SELECT item_id, name, type FROM order_items WHERE order_id = $1`, [id]
       );
       console.log(`Items in order ${id}:`, JSON.stringify(itemCheck.rows));
 
-      return updatedOrder
-        ? res.status(200).json({ success: true, order: updatedOrder })
-        : res.status(404).json({ success: false, error: "Order not found." });
+      return res.status(200).json({ success: true, order: updatedOrder });
     } catch (error) {
       console.error("Update status error:", error.message);
       res.status(500).json({ success: false, error: error.message });
@@ -175,8 +201,9 @@ getWaiterDashboard: async (req, res) => {
   getClientStatus: async (req, res) => {
     const { id } = req.params;
     try {
+      // ✅ FIXED: using phone_number column
       const result = await pool.query(
-        `SELECT o.id, o.status, o.table_number, u.name AS waiter_name
+        `SELECT o.id, o.status, o.table_number, u.name AS waiter_name, u.phone_number AS waiter_phone
          FROM orders o LEFT JOIN users u ON o.assigned_server_id = u.id WHERE o.id = $1`, [id]
       );
       if (result.rows.length === 0)
