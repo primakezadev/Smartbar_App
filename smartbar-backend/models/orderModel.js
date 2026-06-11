@@ -14,7 +14,6 @@ const OrderModel = {
     return result.rows[0];
   },
 
- 
   // Insert individual items with routing destination flag (counter vs kitchen)
   createOrderItem: async (orderId, productId, quantity, destination) => {
     await pool.query(
@@ -23,8 +22,7 @@ const OrderModel = {
     );
   },
 
-  
-  //  FIX: Complete GROUP BY sequence to prevent Neon/Postgres engine rejection crashes
+  // Complete GROUP BY sequence to prevent Neon/Postgres engine rejection crashes
   getActiveOrders: async () => {
     const queryText = `
       SELECT o.id AS order_id, o.table_number, o.status, o.created_at, o.assigned_server_id,
@@ -50,30 +48,26 @@ const OrderModel = {
     return result.rows;
   },
 
-  
-  //  Add this back so your notification trigger placeholder functions properly
+  // Add this back so your notification trigger placeholder functions properly
   getAvailableStaff: async () => {
     const result = await pool.query('SELECT * FROM staff_profiles WHERE is_available = true');
     return result.rows;
   },
 
-  
   // Assign a server profile to the ticket
- // ⚡ MODEL FIX: Make sure the column name matches your status tracking JOIN query!
-assignServerToOrder: async (orderId, serverId) => {
-  const query = `
-    UPDATE orders 
-    SET 
-      assigned_server_id = $1,  -- 👈 MUST match the column used in your controller's LEFT JOIN!
-      status = 'preparing' 
-    WHERE id = $2 
-    RETURNING *;
-  `;
-  const result = await pool.query(query, [serverId, orderId]);
-  return result.rows[0];
-}}
+  assignServerToOrder: async (orderId, serverId) => {
+    const query = `
+      UPDATE orders 
+      SET 
+        assigned_server_id = $1,
+        status = 'preparing' 
+      WHERE id = $2 
+      RETURNING *;
+    `;
+    const result = await pool.query(query, [serverId, orderId]);
+    return result.rows[0];
+  },
 
-  
   // For client tracking checks
   getClientLiveTracking: async (orderId) => {
     const queryText = `
@@ -86,6 +80,6 @@ assignServerToOrder: async (orderId, serverId) => {
     const result = await pool.query(queryText, [orderId]);
     return result.rows[0];
   }
-
+};
 
 module.exports = OrderModel;

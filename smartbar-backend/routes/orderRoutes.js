@@ -17,6 +17,9 @@ router.get('/dashboard/counter', authenticate, authorize(['counter', 'manager', 
 router.get('/dashboard/waiter', authenticate, authorize(['waiter', 'manager', 'admin']), OrderController.getWaiterDashboard);
 router.get('/active', authenticate, authorize(['waiter', 'manager', 'admin']), OrderController.getActiveOrders);
 
+// ✅ NEW: Sold-out items (Food / Drinks) for Manager dashboard
+router.get('/dashboard/sold-items', authenticate, authorize(['manager', 'admin']), OrderController.getSoldItems);
+
 router.patch('/:id/status', authenticate, authorize(['waiter', 'manager', 'admin', 'counter', 'kitchen']), OrderController.updateStatus);
 
 module.exports = router;

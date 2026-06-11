@@ -3,12 +3,22 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Dimensions,
 import { Trash2, ImagePlus } from "lucide-react-native";
 import { LineChart } from "react-native-gifted-charts";
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 
 const BASE_URL = "https://smartbar-app.onrender.com";
 const { width } = Dimensions.get("window");
 
-type ManagerTab = "overview" | "inventory" | "reconciliation";
+type ManagerTab = "overview" | "inventory" | "sales" | "reconciliation";
 const AVAILABLE_CATEGORIES = ["Beer", "Cider", "Soda", "Water", "Juice", "Brochettes", "Pork", "Sides", "Starters", "Cocktail"];
+
+interface SoldItem {
+  name: string;
+  quantity: number;
+  price: number;
+  total: number;
+  order_id: number;
+  table_number: string | number;
+}
 
 export default function ManagerDashboard() {
   const [activeTab, setActiveTab] = useState<ManagerTab>("overview");
@@ -21,6 +31,13 @@ export default function ManagerDashboard() {
   const [category, setCategory] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [dropdownVisible, setDropdownVisible] = useState(false);
+
+  // Sales tab state (sold-out items, split by category)
+  const [foodItems, setFoodItems] = useState<SoldItem[]>([]);
+  const [drinkItems, setDrinkItems] = useState<SoldItem[]>([]);
+  const [foodTotal, setFoodTotal] = useState(0);
+  const [drinksTotal, setDrinksTotal] = useState(0);
+  const [salesLoading, setSalesLoading] = useState(true);
 
   const fetchData = async () => {
     setLoading(true);
@@ -76,7 +93,37 @@ export default function ManagerDashboard() {
     }
   };
 
+  const fetchSoldItems = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('userToken');
+      const response = await fetch(`${BASE_URL}/api/orders/dashboard/sold-items`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setFoodItems(data.food || []);
+        setDrinkItems(data.drinks || []);
+        setFoodTotal(data.foodTotal || 0);
+        setDrinksTotal(data.drinksTotal || 0);
+      }
+    } catch (error) {
+      console.error("Sold items fetch failed:", error);
+    } finally {
+      setSalesLoading(false);
+    }
+  };
+
   useEffect(() => { fetchData(); }, []);
+
+  useEffect(() => {
+    fetchSoldItems();
+    const interval = setInterval(fetchSoldItems, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -152,7 +199,7 @@ export default function ManagerDashboard() {
 
       <View style={styles.navBarContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navScroll}>
-          {(["overview", "inventory", "reconciliation"] as ManagerTab[]).map((tab) => (
+          {(["overview", "inventory", "sales", "reconciliation"] as ManagerTab[]).map((tab) => (
             <TouchableOpacity key={tab} style={[styles.navTab, activeTab === tab && styles.navTabActive]} onPress={() => setActiveTab(tab)}>
               <Text style={[styles.navTabText, activeTab === tab && styles.navTabTextActive]}>{tab.toUpperCase()}</Text>
             </TouchableOpacity>
@@ -239,6 +286,78 @@ export default function ManagerDashboard() {
           </View>
         )}
 
+        {activeTab === "sales" && (
+          <View>
+            {/* FOOD TABLE */}
+            <View style={styles.tableContainer}>
+              <Text style={styles.sectionTitle}>Food (Sold Out)</Text>
+              <View style={styles.salesHeaderRow}>
+                <Text style={[styles.salesHeaderCell, { flex: 2 }]}>Item</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1, textAlign: 'center' }]}>Qty</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1.5, textAlign: 'right' }]}>Price</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1.5, textAlign: 'right' }]}>Total</Text>
+              </View>
+              {foodItems.length === 0 ? (
+                <Text style={styles.emptySalesText}>
+                  {salesLoading ? "Loading..." : "No food items sold yet."}
+                </Text>
+              ) : (
+                foodItems.map((item, index) => (
+                  <View key={`food-${index}`} style={styles.salesRow}>
+                    <Text style={[styles.cell, { flex: 2 }]} numberOfLines={1}>{item.name}</Text>
+                    <Text style={[styles.cell, { flex: 1, textAlign: 'center' }]}>{item.quantity}</Text>
+                    <Text style={[styles.cell, { flex: 1.5, textAlign: 'right' }]}>{item.price.toLocaleString()}</Text>
+                    <Text style={[styles.cell, { flex: 1.5, textAlign: 'right', color: '#D48135', fontWeight: '700' }]}>
+                      {item.total.toLocaleString()}
+                    </Text>
+                  </View>
+                ))
+              )}
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Food Sales</Text>
+                <Text style={styles.totalValue}>RWF {foodTotal.toLocaleString()}</Text>
+              </View>
+            </View>
+
+            {/* DRINKS TABLE */}
+            <View style={[styles.tableContainer, { marginTop: 16 }]}>
+              <Text style={styles.sectionTitle}>Drinks (Sold Out)</Text>
+              <View style={styles.salesHeaderRow}>
+                <Text style={[styles.salesHeaderCell, { flex: 2 }]}>Item</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1, textAlign: 'center' }]}>Qty</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1.5, textAlign: 'right' }]}>Price</Text>
+                <Text style={[styles.salesHeaderCell, { flex: 1.5, textAlign: 'right' }]}>Total</Text>
+              </View>
+              {drinkItems.length === 0 ? (
+                <Text style={styles.emptySalesText}>
+                  {salesLoading ? "Loading..." : "No drinks sold yet."}
+                </Text>
+              ) : (
+                drinkItems.map((item, index) => (
+                  <View key={`drink-${index}`} style={styles.salesRow}>
+                    <Text style={[styles.cell, { flex: 2 }]} numberOfLines={1}>{item.name}</Text>
+                    <Text style={[styles.cell, { flex: 1, textAlign: 'center' }]}>{item.quantity}</Text>
+                    <Text style={[styles.cell, { flex: 1.5, textAlign: 'right' }]}>{item.price.toLocaleString()}</Text>
+                    <Text style={[styles.cell, { flex: 1.5, textAlign: 'right', color: '#D48135', fontWeight: '700' }]}>
+                      {item.total.toLocaleString()}
+                    </Text>
+                  </View>
+                ))
+              )}
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Drinks Sales</Text>
+                <Text style={styles.totalValue}>RWF {drinksTotal.toLocaleString()}</Text>
+              </View>
+            </View>
+
+            {/* GRAND TOTAL */}
+            <View style={[styles.totalRow, styles.grandTotalRow]}>
+              <Text style={styles.grandTotalLabel}>Grand Total</Text>
+              <Text style={styles.grandTotalValue}>RWF {(foodTotal + drinksTotal).toLocaleString()}</Text>
+            </View>
+          </View>
+        )}
+
         {activeTab === "reconciliation" && (
           <View style={styles.tableContainer}>
             <Text style={styles.sectionTitle}>Daily Reconciliation Report</Text>
@@ -307,5 +426,17 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.8)" },
   modalContent: { backgroundColor: "#1A1A1E", margin: 20, borderRadius: 12, padding: 10 },
   categoryItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#333", alignItems: "center" },
-  categoryText: { color: "#FFF", fontSize: 16 }
+  categoryText: { color: "#FFF", fontSize: 16 },
+
+  // Sales tab styles
+  salesHeaderRow: { flexDirection: "row", paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#1A1A1E", marginBottom: 4 },
+  salesHeaderCell: { color: "#71717A", fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
+  salesRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#1A1A1E" },
+  emptySalesText: { color: "#27272A", fontSize: 13, fontWeight: "600", textAlign: "center", paddingVertical: 20 },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#1A1A1E" },
+  totalLabel: { color: "#94A3B8", fontSize: 13, fontWeight: "700" },
+  totalValue: { color: "#D48135", fontSize: 16, fontWeight: "900" },
+  grandTotalRow: { backgroundColor: "#121214", borderRadius: 16, padding: 16, marginTop: 16, borderTopWidth: 0 },
+  grandTotalLabel: { color: "#FFF", fontSize: 15, fontWeight: "800" },
+  grandTotalValue: { color: "#FFF", fontSize: 20, fontWeight: "900" },
 });

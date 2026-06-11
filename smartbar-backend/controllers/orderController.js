@@ -146,6 +146,49 @@ const OrderController = {
     }
   },
 
+  // ✅ NEW: Sold-out items for Manager dashboard, split by category (Food / Drinks)
+  getSoldItems: async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT oi.name, oi.type, oi.quantity, oi.price, o.id AS order_id, o.table_number
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        WHERE o.status = 'ready'
+        ORDER BY o.created_at DESC;
+      `);
+
+      const food = [];
+      const drinks = [];
+      let foodTotal = 0;
+      let drinksTotal = 0;
+
+      result.rows.forEach(row => {
+        const lineTotal = (parseFloat(row.price) || 0) * row.quantity;
+        const entry = {
+          name: row.name,
+          quantity: row.quantity,
+          price: parseFloat(row.price) || 0,
+          total: lineTotal,
+          order_id: row.order_id,
+          table_number: row.table_number
+        };
+
+        if (row.type === 'kitchen') {
+          food.push(entry);
+          foodTotal += lineTotal;
+        } else {
+          drinks.push(entry);
+          drinksTotal += lineTotal;
+        }
+      });
+
+      res.status(200).json({ success: true, food, drinks, foodTotal, drinksTotal });
+    } catch (error) {
+      console.error("Sold items error:", error.message);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
   updateStatus: async (req, res) => {
     const { id } = req.params;
     const { server_id, status } = req.body;
