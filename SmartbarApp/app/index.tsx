@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import SplashScreenComponent from './SplashScreen';
+import SplashScreenComponent from '../src/screens/SplashScreen';
 
 export default function Index() {
   const router = useRouter();

@@ -1,34 +1,37 @@
-import React, { useEffect } from 'react';
-import { StyleSheet, View, Text, Image, Dimensions, ViewStyle, TextStyle, ImageStyle } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Image,
+  Dimensions,
+  Animated,
+  ViewStyle,
+  TextStyle,
+  ImageStyle,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
-import { useRootNavigationState } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
 const SplashScreenComponent: React.FC = () => {
-  const navigationState = useRootNavigationState();
-
-  const opacity = useSharedValue<number>(0);
-  const contentScale = useSharedValue<number>(0.7);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.7)).current;
 
   useEffect(() => {
-    // Wait until the Root Layout navigation state is fully ready
-    if (!navigationState?.key) return;
-
-    // Fade and Scale IN only — navigation is handled by index.tsx
-    opacity.value = withTiming(1, { duration: 1000 });
-    contentScale.value = withTiming(1, { duration: 1000 });
-  }, [navigationState?.key]);
-
-  const animatedContentStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ scale: contentScale.value }],
-  }));
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -37,6 +40,7 @@ const SplashScreenComponent: React.FC = () => {
         style={StyleSheet.absoluteFill}
       />
 
+      {/* ✅ Increased opacity from 0.05 to 0.18 */}
       <Image
         source={{ uri: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=800' }}
         style={[styles.bgImage, styles.topLeft]}
@@ -46,18 +50,14 @@ const SplashScreenComponent: React.FC = () => {
         style={[styles.bgImage, styles.bottomRight]}
       />
 
-      <Animated.View style={[styles.content, animatedContentStyle]}>
+      <Animated.View style={[styles.content, { opacity, transform: [{ scale }] }]}>
         <Text style={styles.emojiIcon}>🍹</Text>
         <Text style={styles.title}>Smartbar</Text>
         <View style={styles.separator} />
         <Text style={styles.subtitle}>PREMIUM DRINKS EXPERIENCE</Text>
       </Animated.View>
 
-      <View style={styles.loaderWrapper}>
-        <View style={styles.loaderBarBackground}>
-          <Animated.View style={[styles.loaderBarActive, { opacity: opacity.value }]} />
-        </View>
-      </View>
+      {/* ✅ Loader bar removed entirely */}
     </View>
   );
 };
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: width * 0.7,
     height: width * 0.7,
-    opacity: 0.05,
+    opacity: 0.40, // ← was 0.05
     borderRadius: 150,
   } as ImageStyle,
   topLeft: { top: -50, left: -50 } as ImageStyle,
@@ -83,9 +83,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 44, fontWeight: '800', color: '#FFF', letterSpacing: 2 } as TextStyle,
   separator: { height: 2, width: 70, backgroundColor: '#D48135', marginVertical: 15 } as ViewStyle,
   subtitle: { fontSize: 10, color: '#888', letterSpacing: 5, fontWeight: '600' } as TextStyle,
-  loaderWrapper: { position: 'absolute', bottom: 100, width: '100%', alignItems: 'center' } as ViewStyle,
-  loaderBarBackground: { width: 100, height: 2, backgroundColor: '#222' } as ViewStyle,
-  loaderBarActive: { width: '100%', height: '100%', backgroundColor: '#D48135' } as ViewStyle,
 });
 
 export default SplashScreenComponent;

@@ -14,12 +14,9 @@ export default function RootLayout() {
   const checkSession = async () => {
     try {
       const session = await SecureStore.getItemAsync('userSession');
-      if (session) {
-        setUser(JSON.parse(session));
-      } else {
-        setUser(null);
-      }
-    } catch (e) {
+      if (session) setUser(JSON.parse(session));
+      else setUser(null);
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -29,15 +26,8 @@ export default function RootLayout() {
   useEffect(() => {
     checkSession();
 
-    // Called by Auth.tsx after successful login
-    (global as any).forceRootLoginSync = (userData: any) => {
-      setUser(userData);
-    };
-
-    // Called by tabs _layout.tsx on logout
-    (global as any).forceRootLogoutSync = () => {
-      setUser(null);
-    };
+    (global as any).forceRootLoginSync = (userData: any) => setUser(userData);
+    (global as any).forceRootLogoutSync = () => setUser(null);
 
     return () => {
       delete (global as any).forceRootLoginSync;
@@ -52,7 +42,7 @@ export default function RootLayout() {
     const isInTabs = segments[0] === '(tabs)';
     const isAtAuth = segments[0] === 'Auth';
 
-    // ✅ Let index.tsx handle its own splash + redirect — don't interfere
+    // Let index.tsx handle splash + redirect — don't interfere
     if (isIndex) {
       NativeSplashScreen.hideAsync().catch(() => {});
       return;
