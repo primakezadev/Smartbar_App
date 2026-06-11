@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, Dimensions, ScrollView, SafeAreaView, Alert, Image } from "react-native";
-import { Trash2, ImagePlus } from "lucide-react-native";
+import { Trash2, ImagePlus, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { LineChart } from "react-native-gifted-charts";
 import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
@@ -20,12 +20,25 @@ interface SoldItem {
   table_number: string | number;
 }
 
+interface InventoryRow {
+  product_id: number;
+  name: string;
+  category: 'food' | 'drink';
+  unit_price: number;
+  opening_stock: number;
+  purchase_stock: number;
+  sales: number;
+  closing_stock: number;
+  total_price: number;
+}
+
+const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+
 export default function ManagerDashboard() {
   const [activeTab, setActiveTab] = useState<ManagerTab>("overview");
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [revenueData, setRevenueData] = useState([0, 0, 0, 0, 0, 0, 0]);
-  const [inventoryData, setInventoryData] = useState<any[]>([]);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
@@ -39,13 +52,20 @@ export default function ManagerDashboard() {
   const [drinksTotal, setDrinksTotal] = useState(0);
   const [salesLoading, setSalesLoading] = useState(true);
 
+  // Reconciliation tab state (daily inventory report)
+  const [reportDate, setReportDate] = useState<string>(formatDate(new Date()));
+  const [foodInv, setFoodInv] = useState<InventoryRow[]>([]);
+  const [drinksInv, setDrinksInv] = useState<InventoryRow[]>([]);
+  const [foodInvTotal, setFoodInvTotal] = useState(0);
+  const [drinksInvTotal, setDrinksInvTotal] = useState(0);
+  const [invLoading, setInvLoading] = useState(true);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [prodRes, revRes, inventoryReportRes] = await Promise.all([
+      const [prodRes, revRes] = await Promise.all([
         fetch(`${BASE_URL}/api/products`),
         fetch(`${BASE_URL}/api/reports/daily`),
-        fetch(`${BASE_URL}/api/reports/inventory-report`)
       ]);
 
       const contentType = prodRes.headers.get("content-type");
@@ -55,13 +75,6 @@ export default function ManagerDashboard() {
 
       const prodData = await prodRes.json();
       const revData = await revRes.json();
-      const invReportData = await inventoryReportRes.json();
-
-      if (invReportData.success && Array.isArray(invReportData.data)) {
-        setInventoryData(invReportData.data);
-      } else {
-        setInventoryData([]);
-      }
 
       if (prodData.products) setProducts(prodData.products);
       else if (Array.isArray(prodData)) setProducts(prodData);
@@ -69,22 +82,6 @@ export default function ManagerDashboard() {
       if (revData.data) {
         setRevenueData(revData.data.map((item: any) => parseFloat(item.revenue) || 0));
       }
-
-      let finalInventory: any[] = [];
-      if (Array.isArray(invReportData)) {
-        finalInventory = invReportData;
-      } else if (invReportData.data && Array.isArray(invReportData.data)) {
-        finalInventory = invReportData.data;
-      } else {
-        const dData = invReportData.drinks || [];
-        const kData = invReportData.kitchen || [];
-        finalInventory = [
-          ...dData.map((i: any) => ({ ...i, source: 'drinks_inventory' })),
-          ...kData.map((i: any) => ({ ...i, source: 'kitchen_inventory' }))
-        ];
-      }
-      setInventoryData(finalInventory);
-
     } catch (error) {
       console.error("Sync Error:", error);
       Alert.alert("Sync Error", error instanceof Error ? error.message : "Could not communicate with server.");
@@ -117,6 +114,78 @@ export default function ManagerDashboard() {
     }
   };
 
+  const fetchDailyInventory = async (date: string) => {
+    setInvLoading(true);
+    try {
+      const token = await SecureStore.getItemAsync('userToken');
+      const response = await fetch(`${BASE_URL}/api/reports/daily-inventory?date=${date}`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setFoodInv(data.food || []);
+        setDrinksInv(data.drinks || []);
+        setFoodInvTotal(data.foodTotal || 0);
+        setDrinksInvTotal(data.drinksTotal || 0);
+      } else {
+        Alert.alert("Error", data.error || "Could not load daily report.");
+      }
+    } catch (error) {
+      console.error("Daily inventory fetch failed:", error);
+      Alert.alert("Error", "Could not load daily report.");
+    } finally {
+      setInvLoading(false);
+    }
+  };
+
+  const handleUpdateInventoryField = async (
+    item: InventoryRow,
+    field: 'opening_stock' | 'purchase_stock' | 'unit_price',
+    rawValue: string
+  ) => {
+    const value = parseFloat(rawValue);
+    if (isNaN(value)) return;
+
+    const payload: any = {
+      item_name: item.name,
+      category: item.category,
+      record_date: reportDate,
+    };
+    payload[field] = value;
+
+    try {
+      const token = await SecureStore.getItemAsync('userToken');
+      const response = await fetch(`${BASE_URL}/api/reports/daily-inventory/update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (data.success) {
+        fetchDailyInventory(reportDate);
+      } else {
+        Alert.alert("Error", data.error || "Could not update value.");
+      }
+    } catch (error) {
+      console.error("Update inventory error:", error);
+      Alert.alert("Error", "Could not update value.");
+    }
+  };
+
+  const changeReportDate = (deltaDays: number) => {
+    const d = new Date(reportDate);
+    d.setDate(d.getDate() + deltaDays);
+    setReportDate(formatDate(d));
+  };
+
   useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
@@ -124,6 +193,12 @@ export default function ManagerDashboard() {
     const interval = setInterval(fetchSoldItems, 4000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "reconciliation") {
+      fetchDailyInventory(reportDate);
+    }
+  }, [activeTab, reportDate]);
 
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -179,19 +254,68 @@ export default function ManagerDashboard() {
     }
   };
 
-  const handleSaveStock = async (source: string, productName: string, value: string) => {
-    try {
-      const response = await fetch(`${BASE_URL}/api/reports/update-stock`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: source, name: productName, closing_stock: parseFloat(value) || 0 }),
-      });
-      const data = await response.json();
-      if (data.success) console.log("Stock saved successfully");
-    } catch (error) {
-      console.error("Update Error:", error);
-    }
-  };
+  const renderInventoryTable = (title: string, rows: InventoryRow[], total: number) => (
+    <View style={styles.tableContainer}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+        <View>
+          <View style={styles.invHeaderRow}>
+            <Text style={[styles.invHeaderCell, styles.colNo]}>No</Text>
+            <Text style={[styles.invHeaderCell, styles.colProduct]}>Product</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Unit Price</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Opening</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Purchase</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Sales</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Closing</Text>
+            <Text style={[styles.invHeaderCell, styles.colNum]}>Total</Text>
+          </View>
+
+          {rows.length === 0 ? (
+            <Text style={styles.emptySalesText}>
+              {invLoading ? "Loading..." : "No products found."}
+            </Text>
+          ) : (
+            rows.map((item, index) => (
+              <View key={`${title}-${item.product_id}`} style={styles.invRow}>
+                <Text style={[styles.cell, styles.colNo]}>{index + 1}</Text>
+                <Text style={[styles.cell, styles.colProduct]} numberOfLines={1}>{item.name}</Text>
+
+                <TextInput
+                  style={[styles.editInput, styles.colNum]}
+                  keyboardType="numeric"
+                  defaultValue={item.unit_price.toString()}
+                  onBlur={(e) => handleUpdateInventoryField(item, 'unit_price', (e.nativeEvent as any).text)}
+                />
+                <TextInput
+                  style={[styles.editInput, styles.colNum]}
+                  keyboardType="numeric"
+                  defaultValue={item.opening_stock.toString()}
+                  onBlur={(e) => handleUpdateInventoryField(item, 'opening_stock', (e.nativeEvent as any).text)}
+                />
+                <TextInput
+                  style={[styles.editInput, styles.colNum]}
+                  keyboardType="numeric"
+                  defaultValue={item.purchase_stock.toString()}
+                  onBlur={(e) => handleUpdateInventoryField(item, 'purchase_stock', (e.nativeEvent as any).text)}
+                />
+
+                <Text style={[styles.cell, styles.colNum, { textAlign: 'center' }]}>{item.sales}</Text>
+                <Text style={[styles.cell, styles.colNum, { textAlign: 'center', fontWeight: '700' }]}>{item.closing_stock}</Text>
+                <Text style={[styles.cell, styles.colNum, { textAlign: 'right', color: '#D48135', fontWeight: '700' }]}>
+                  {item.total_price.toLocaleString()}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+
+      <View style={styles.totalRow}>
+        <Text style={styles.totalLabel}>Total {title} Sales</Text>
+        <Text style={styles.totalValue}>RWF {total.toLocaleString()}</Text>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -359,19 +483,26 @@ export default function ManagerDashboard() {
         )}
 
         {activeTab === "reconciliation" && (
-          <View style={styles.tableContainer}>
-            <Text style={styles.sectionTitle}>Daily Reconciliation Report</Text>
-            {inventoryData.map((item, index) => (
-              <View key={index} style={styles.tableRow}>
-                <Text style={styles.cell}>{item.name}</Text>
-                <TextInput
-                  style={styles.editInput}
-                  keyboardType="numeric"
-                  placeholder={item.closing_stock?.toString() || "0"}
-                  onBlur={(e) => handleSaveStock(item.source, item.name, (e.nativeEvent as any).text)}
-                />
-              </View>
-            ))}
+          <View>
+            {/* DATE NAVIGATOR */}
+            <View style={styles.dateNavRow}>
+              <TouchableOpacity style={styles.dateNavBtn} onPress={() => changeReportDate(-1)}>
+                <ChevronLeft size={18} color="#FFF" />
+              </TouchableOpacity>
+              <Text style={styles.dateText}>{reportDate}</Text>
+              <TouchableOpacity style={styles.dateNavBtn} onPress={() => changeReportDate(1)}>
+                <ChevronRight size={18} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            {renderInventoryTable("Food", foodInv, foodInvTotal)}
+            <View style={{ height: 16 }} />
+            {renderInventoryTable("Drinks", drinksInv, drinksInvTotal)}
+
+            <View style={[styles.totalRow, styles.grandTotalRow]}>
+              <Text style={styles.grandTotalLabel}>Grand Total</Text>
+              <Text style={styles.grandTotalValue}>RWF {(foodInvTotal + drinksInvTotal).toLocaleString()}</Text>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -420,9 +551,7 @@ const styles = StyleSheet.create({
   productThumb: { width: 40, height: 40, borderRadius: 8, backgroundColor: "#1A1A1E" },
   productName: { color: "#FFF", fontWeight: "700", flex: 1 },
   tableContainer: { backgroundColor: "#121214", padding: 16, borderRadius: 16 },
-  tableRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: "#222" },
   cell: { color: "#FFF", fontSize: 13 },
-  editInput: { backgroundColor: "#1A1A1E", color: "#FFF", borderRadius: 6, padding: 5, width: 60, textAlign: "center" },
   modalOverlay: { flex: 1, justifyContent: "center", backgroundColor: "rgba(0,0,0,0.8)" },
   modalContent: { backgroundColor: "#1A1A1E", margin: 20, borderRadius: 12, padding: 10 },
   categoryItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#333", alignItems: "center" },
@@ -439,4 +568,16 @@ const styles = StyleSheet.create({
   grandTotalRow: { backgroundColor: "#121214", borderRadius: 16, padding: 16, marginTop: 16, borderTopWidth: 0 },
   grandTotalLabel: { color: "#FFF", fontSize: 15, fontWeight: "800" },
   grandTotalValue: { color: "#FFF", fontSize: 20, fontWeight: "900" },
+
+  // Reconciliation tab styles
+  dateNavRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, marginBottom: 16 },
+  dateNavBtn: { backgroundColor: "#121214", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "#1A1A1E" },
+  dateText: { color: "#FFF", fontSize: 16, fontWeight: "800", minWidth: 110, textAlign: "center" },
+  invHeaderRow: { flexDirection: "row", paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: "#1A1A1E", marginBottom: 4 },
+  invHeaderCell: { color: "#71717A", fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textAlign: "center" },
+  invRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#1A1A1E" },
+  colNo: { width: 36, textAlign: "center" },
+  colProduct: { width: 130 },
+  colNum: { width: 80, textAlign: "center" },
+  editInput: { backgroundColor: "#1A1A1E", color: "#FFF", borderRadius: 6, padding: 6, marginHorizontal: 2, textAlign: "center", fontSize: 12 },
 });
