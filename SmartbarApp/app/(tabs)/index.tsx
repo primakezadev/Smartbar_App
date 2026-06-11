@@ -50,21 +50,23 @@ const decodeBase64 = (input: string) => {
   return output;
 };
 
-const saveActiveOrder = async (order: ActiveOrder | null) => {
+// ✅ FIX: Save activeOrder per user ID so different clients don't share orders
+const saveActiveOrder = async (order: ActiveOrder | null, userId: string) => {
   try {
     if (order) {
-      await SecureStore.setItemAsync('activeOrder', JSON.stringify(order));
+      await SecureStore.setItemAsync(`activeOrder_${userId}`, JSON.stringify(order));
     } else {
-      await SecureStore.deleteItemAsync('activeOrder');
+      await SecureStore.deleteItemAsync(`activeOrder_${userId}`);
     }
   } catch (e) {
     console.error("Failed to save activeOrder:", e);
   }
 };
 
-const loadActiveOrder = async (): Promise<ActiveOrder | null> => {
+// ✅ FIX: Load activeOrder per user ID
+const loadActiveOrder = async (userId: string): Promise<ActiveOrder | null> => {
   try {
-    const stored = await SecureStore.getItemAsync('activeOrder');
+    const stored = await SecureStore.getItemAsync(`activeOrder_${userId}`);
     return stored ? JSON.parse(stored) : null;
   } catch (e) {
     return null;
@@ -81,23 +83,36 @@ export default function ClientDashboard() {
   const [tableNumber, setTableNumber] = useState<string>("");
   const [submittingOrder, setSubmittingOrder] = useState<boolean>(false);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string>("");
 
-  // Restore activeOrder from SecureStore on mount (survives logout/login)
+  // ✅ FIX: Load userId first, then load that user's activeOrder only
   useEffect(() => {
     const restoreOrder = async () => {
-      const saved = await loadActiveOrder();
-      if (saved) {
-        setActiveOrder(saved);
-        console.log("🔁 Restored active order:", JSON.stringify(saved));
+      try {
+        const session = await SecureStore.getItemAsync('userSession');
+        if (session) {
+          const user = JSON.parse(session);
+          const userId = String(user.id);
+          setCurrentUserId(userId);
+          const saved = await loadActiveOrder(userId);
+          if (saved) {
+            setActiveOrder(saved);
+            console.log(`🔁 Restored activeOrder for user ${userId}:`, JSON.stringify(saved));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to restore order:", e);
       }
     };
     restoreOrder();
   }, []);
 
-  // Save activeOrder to SecureStore whenever it changes
+  // ✅ FIX: Save activeOrder per user ID whenever it changes
   useEffect(() => {
-    saveActiveOrder(activeOrder);
-  }, [activeOrder]);
+    if (currentUserId) {
+      saveActiveOrder(activeOrder, currentUserId);
+    }
+  }, [activeOrder, currentUserId]);
 
   // REST polling fallback in case socket missed the event
   useEffect(() => {
@@ -484,7 +499,6 @@ export default function ClientDashboard() {
             {activeOrder ? (
               <View style={styles.notiContent}>
 
-                {/* Order ID + Status */}
                 <View style={styles.orderInfoRow}>
                   <Text style={styles.orderIdText}>Order #{activeOrder.id}</Text>
                   <View style={[
@@ -500,7 +514,6 @@ export default function ClientDashboard() {
                   </View>
                 </View>
 
-                {/* Waiter Card */}
                 {activeOrder.waiter_name && activeOrder.waiter_name !== 'Finding Waiter...' ? (
                   <View style={styles.waiterCard}>
                     <View style={styles.waiterAvatarCircle}>
@@ -524,7 +537,6 @@ export default function ClientDashboard() {
                   </View>
                 )}
 
-                {/* Status Timeline */}
                 <View style={styles.timelineContainer}>
                   {['pending', 'preparing', 'ready'].map((step, index) => {
                     const statusOrder = ['pending', 'preparing', 'ready', 'completed'];

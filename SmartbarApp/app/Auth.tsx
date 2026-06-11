@@ -46,7 +46,6 @@ export default function AuthScreen() {
     else if (code === "COUNT2026") assignedRole = "counter";
     else if (code === "KICH2026") assignedRole = "kitchen";
 
-
     const payload = isLogin
       ? { email: email.trim(), password: password }
       : { name: name.trim(), email: email.trim(), password: password, role: assignedRole };
@@ -71,6 +70,17 @@ export default function AuthScreen() {
       if (response.ok && data.success) {
         console.log("✅ Auth response OK and successful!");
 
+        // ✅ FIX: Clear any previous user's activeOrder before saving new session
+        // This prevents second client from seeing first client's order
+        const previousSession = await SecureStore.getItemAsync('userSession');
+        if (previousSession) {
+          const prevUser = JSON.parse(previousSession);
+          if (prevUser?.id) {
+            await SecureStore.deleteItemAsync(`activeOrder_${prevUser.id}`);
+            console.log(`🧹 Cleared activeOrder for previous user ID: ${prevUser.id}`);
+          }
+        }
+
         if (data.token) {
           console.log("💾 Saving token to SecureStore...");
           await SecureStore.setItemAsync('userToken', String(data.token));
@@ -92,7 +102,6 @@ export default function AuthScreen() {
         const role = data.user?.role?.toLowerCase() || "client";
         console.log("🔀 Role from server:", role);
 
-        // ✅ FIXED: Match exact filenames in app/(tabs)/
         const routeMap: Record<string, string> = {
           waiter:  '/(tabs)/Waiter',
           kitchen: '/(tabs)/Kitchen',
