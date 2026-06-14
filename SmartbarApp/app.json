@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "SmartbarApp",
+    "slug": "SmartbarApp",
+    "version": "1.0.0",
+    "scheme": "smartbarapp",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9975fe68-9187-4603-a42b-b2259c5238cb"
+      }
+    },
+    "android": {
+      "package": "com.primaaa.SmartbarApp"
+    },
+    "ios": {
+      "bundleIdentifier": "com.primaaa.SmartbarApp",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
