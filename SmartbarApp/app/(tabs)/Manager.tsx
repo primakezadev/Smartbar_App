@@ -18,12 +18,10 @@ const AVAILABLE_CATEGORIES = [
   "Brochettes", "Pork", "Sides", "Starters", "Cocktail"
 ];
 
-// Matches public.daily_inventory attributes combined with calculated fields
 interface InventoryRow {
-  id?: number;
-  item_name: string;
+  product_id?: number;
+  name: string;
   category: 'food' | 'drink';
-  record_date: string;
   unit_price: number;
   opening_stock: number;
   purchase_stock: number;
@@ -32,7 +30,6 @@ interface InventoryRow {
   total_price: number;
 }
 
-// Local controlled inputs keyed by item_name
 interface EditState {
   unit_price: string;
   opening_stock: string;
@@ -52,7 +49,7 @@ export default function ManagerDashboard() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [dropdownVisible, setDropdownVisible] = useState(false);
 
-  // Reconciliation
+  // Reconciliation States
   const [reportDate, setReportDate] = useState<string>(formatDate(new Date()));
   const [foodInv, setFoodInv] = useState<InventoryRow[]>([]);
   const [drinksInv, setDrinksInv] = useState<InventoryRow[]>([]);
@@ -60,10 +57,9 @@ export default function ManagerDashboard() {
   const [drinksInvTotal, setDrinksInvTotal] = useState(0);
   const [invLoading, setInvLoading] = useState(false);
 
-  // Edit states mapping text inputs locally
+  // Input states keyed by dynamic product name
   const [editStates, setEditStates] = useState<Record<string, EditState>>({});
 
-  // ── Auth ────────────────────────────────────────────────────────────────────
   const getAuthHeaders = async () => {
     const token = await SecureStore.getItemAsync('userToken');
     return {
@@ -73,7 +69,6 @@ export default function ManagerDashboard() {
     };
   };
 
-  // ── Overview ────────────────────────────────────────────────────────────────
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -82,7 +77,7 @@ export default function ManagerDashboard() {
         fetch(`${BASE_URL}/api/reports/daily`),
       ]);
       const ct = prodRes.headers.get("content-type");
-      if (!ct?.includes("application/json")) throw new Error("Server returned HTML. Check backend logs.");
+      if (!ct?.includes("application/json")) throw new Error("Server returned HTML.");
       const prodData = await prodRes.json();
       const revData = await revRes.json();
       if (prodData.products) setProducts(prodData.products);
@@ -95,7 +90,6 @@ export default function ManagerDashboard() {
     }
   };
 
-  // ── Fetch daily inventory from View ──────────────────────────────────────────
   const fetchDailyInventory = useCallback(async (date: string) => {
     setInvLoading(true);
     try {
@@ -109,11 +103,10 @@ export default function ManagerDashboard() {
         setFoodInvTotal(data.foodTotal || 0);
         setDrinksInvTotal(data.drinksTotal || 0);
 
-        // Seed editable states using safe item_name lookups
         const next: Record<string, EditState> = {};
         [...(data.food || []), ...(data.drinks || [])].forEach((row: InventoryRow) => {
-          if (row.item_name) {
-            next[row.item_name] = {
+          if (row.name) {
+            next[row.name] = {
               unit_price:     String(row.unit_price ?? 0),
               opening_stock:  String(row.opening_stock ?? 0),
               purchase_stock: String(row.purchase_stock ?? 0),
@@ -122,16 +115,15 @@ export default function ManagerDashboard() {
         });
         setEditStates(next);
       } else {
-        Alert.alert("Error", data.error || "Could not load daily report.");
+        Alert.alert("Error", data.error || "Could not load reports.");
       }
     } catch {
-      Alert.alert("Error", "Could not load daily report from backend.");
+      Alert.alert("Error", "Could not load report loops.");
     } finally {
       setInvLoading(false);
     }
   }, []);
 
-  // ── Save a field on blur ────────────────────────────────────────────────────
   const saveInventoryField = async (
     item: InventoryRow,
     field: 'opening_stock' | 'purchase_stock' | 'unit_price',
@@ -146,7 +138,7 @@ export default function ManagerDashboard() {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          item_name:   item.item_name,
+          item_name:   item.name,
           category:    item.category,
           record_date: reportDate,
           [field]:     value,
@@ -154,50 +146,46 @@ export default function ManagerDashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        fetchDailyInventory(reportDate); // Re-fetch view items to recalculate aggregates
+        fetchDailyInventory(reportDate); 
       } else {
-        Alert.alert("Save Error", data.error || "Could not save value.");
+        Alert.alert("Save Error", data.error || "Could not complete save.");
       }
     } catch {
-      Alert.alert("Save Error", "Could not save value.");
+      Alert.alert("Save Error", "Network or server saving error.");
     }
   };
 
-  // ── Edit state helpers ──────────────────────────────────────────────────────
-  const getEdit = (itemName: string): EditState =>
-    editStates[itemName] || { unit_price: "0", opening_stock: "0", purchase_stock: "0" };
+  const getEdit = (productName: string): EditState =>
+    editStates[productName] || { unit_price: "0", opening_stock: "0", purchase_stock: "0" };
 
-  const setEditField = (itemName: string, field: keyof EditState, value: string) => {
+  const setEditField = (productName: string, field: keyof EditState, value: string) => {
     if (value !== "" && !/^\d*\.?\d*$/.test(value)) return;
     setEditStates(prev => ({
       ...prev,
-      [itemName]: { ...getEdit(itemName), [field]: value },
+      [productName]: { ...getEdit(productName), [field]: value },
     }));
   };
 
-  // ── Date navigation ─────────────────────────────────────────────────────────
   const changeReportDate = (delta: number) => {
     const d = new Date(reportDate);
     d.setDate(d.getDate() + delta);
     setReportDate(formatDate(d));
   };
 
-  // ── Effects ─────────────────────────────────────────────────────────────────
   useEffect(() => { fetchData(); }, []);
   useEffect(() => {
     if (activeTab === "reconciliation") fetchDailyInventory(reportDate);
   }, [activeTab, reportDate, fetchDailyInventory]);
 
-  // ── Product management ──────────────────────────────────────────────────────
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { Alert.alert("Permission Required", "Allow access to your photo library."); return; }
+    if (!permission.granted) return Alert.alert("Permission Required", "Allow access to media files.");
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.8 });
     if (!result.canceled) setImageUri(result.assets[0].uri);
   };
 
   const handleCreateProduct = async () => {
-    if (!name || !price || !category) return Alert.alert("Validation Error", "Fill all required fields.");
+    if (!name || !price || !category) return Alert.alert("Validation Error", "All fields required.");
     try {
       const formData = new FormData();
       formData.append("name", name); formData.append("price", price); formData.append("category", category);
@@ -208,11 +196,10 @@ export default function ManagerDashboard() {
       const res = await fetch(`${BASE_URL}/api/products`, { method: "POST", body: formData });
       const data = await res.json();
       if (data.success) { Alert.alert("Success", "Product added."); setName(""); setPrice(""); setCategory(""); setImageUri(null); fetchData(); }
-      else Alert.alert("Error", data.message || "Could not add product.");
-    } catch { Alert.alert("Error", "Could not add product."); }
+      else Alert.alert("Error", data.message || "Failed execution.");
+    } catch { Alert.alert("Error", "Could not complete product insertion."); }
   };
 
-  // ── Inventory table ─────────────────────────────────────────────────────────
   const renderInventoryTable = (title: string, rows: InventoryRow[], total: number) => (
     <View style={styles.tableContainer}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -231,63 +218,53 @@ export default function ManagerDashboard() {
 
           {rows.length === 0 ? (
             <Text style={styles.emptyText}>
-              {invLoading ? "Loading..." : "No products found for this date."}
+              {invLoading ? "Loading..." : "No items configured."}
             </Text>
           ) : (
             rows.map((item, index) => {
-              const edit = getEdit(item.item_name);
-              
-              // Calculate dynamic local feedback visually before database commit finishes
+              const edit = getEdit(item.name);
               const liveOpening  = parseFloat(edit.opening_stock)  || 0;
               const livePurchase = parseFloat(edit.purchase_stock) || 0;
               const liveClosing  = Math.max(0, liveOpening + livePurchase - item.sales);
 
               return (
-                <View key={`${title}-${item.item_name}-${index}`} style={styles.invRow}>
+                <View key={`${title}-${item.name}-${index}`} style={styles.invRow}>
                   <Text style={[styles.cell, styles.colNo]}>{index + 1}</Text>
-                  <Text style={[styles.cell, styles.colProduct]} numberOfLines={1}>{item.item_name}</Text>
+                  <Text style={[styles.cell, styles.colProduct]} numberOfLines={1}>{item.name}</Text>
 
-                  {/* Unit Price */}
                   <TextInput
                     style={[styles.editInput, styles.colNum]}
                     keyboardType="numeric"
                     value={edit.unit_price}
-                    onChangeText={v => setEditField(item.item_name, 'unit_price', v)}
+                    onChangeText={v => setEditField(item.name, 'unit_price', v)}
                     onBlur={() => saveInventoryField(item, 'unit_price', edit.unit_price)}
                     returnKeyType="done"
                   />
 
-                  {/* Opening Stock */}
                   <TextInput
                     style={[styles.editInput, styles.colNum]}
                     keyboardType="numeric"
                     value={edit.opening_stock}
-                    onChangeText={v => setEditField(item.item_name, 'opening_stock', v)}
+                    onChangeText={v => setEditField(item.name, 'opening_stock', v)}
                     onBlur={() => saveInventoryField(item, 'opening_stock', edit.opening_stock)}
                     returnKeyType="done"
                   />
 
-                  {/* Purchase Stock */}
                   <TextInput
                     style={[styles.editInput, styles.colNum, styles.purchaseInput]}
                     keyboardType="numeric"
                     value={edit.purchase_stock}
-                    onChangeText={v => setEditField(item.item_name, 'purchase_stock', v)}
+                    onChangeText={v => setEditField(item.name, 'purchase_stock', v)}
                     onBlur={() => saveInventoryField(item, 'purchase_stock', edit.purchase_stock)}
                     returnKeyType="done"
                     placeholder="0"
                     placeholderTextColor="#555"
                   />
 
-                  {/* Sales Count */}
                   <Text style={[styles.cell, styles.colNum, { textAlign: 'center' }]}>{item.sales}</Text>
-
-                  {/* Closing Stock */}
                   <Text style={[styles.cell, styles.colNum, { textAlign: 'center', fontWeight: '700', color: '#4ADE80' }]}>
                     {liveClosing}
                   </Text>
-
-                  {/* Total Valuation */}
                   <Text style={[styles.cell, styles.colNum, { textAlign: 'right', color: '#D48135', fontWeight: '700' }]}>
                     {parseFloat(item.total_price as any || 0).toLocaleString()}
                   </Text>
@@ -299,7 +276,7 @@ export default function ManagerDashboard() {
       </ScrollView>
 
       <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>Total {title} Sales</Text>
+        <Text style={styles.totalLabel}>Total {title} Volume Value</Text>
         <Text style={styles.totalValue}>RWF {parseFloat(total as any || 0).toLocaleString()}</Text>
       </View>
     </View>
@@ -307,7 +284,7 @@ export default function ManagerDashboard() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.headerTitle}>Manager Portal</Text>
+      <Text style={styles.headerTitle}>Smartbar Portal</Text>
 
       <View style={styles.navBarContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navScroll}>
@@ -320,8 +297,6 @@ export default function ManagerDashboard() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16 }}>
-
-        {/* OVERVIEW */}
         {activeTab === "overview" && (
           <View>
             <View style={styles.kpiContainer}>
@@ -348,7 +323,6 @@ export default function ManagerDashboard() {
           </View>
         )}
 
-        {/* INVENTORY */}
         {activeTab === "inventory" && (
           <View>
             <View style={styles.formCard}>
@@ -387,7 +361,6 @@ export default function ManagerDashboard() {
           </View>
         )}
 
-        {/* RECONCILIATION */}
         {activeTab === "reconciliation" && (
           <View>
             <View style={styles.dateNavRow}>
@@ -411,12 +384,12 @@ export default function ManagerDashboard() {
               </View>
             </View>
 
-            {renderInventoryTable("Food", foodInv, foodInvTotal)}
+            {renderInventoryTable("Food Items", foodInv, foodInvTotal)}
             <View style={{ height: 16 }} />
-            {renderInventoryTable("Drinks", drinksInv, drinksInvTotal)}
+            {renderInventoryTable("Drinks Stock", drinksInv, drinksInvTotal)}
 
             <View style={[styles.totalRow, styles.grandTotalRow]}>
-              <Text style={styles.grandTotalLabel}>Grand Total</Text>
+              <Text style={styles.grandTotalLabel}>Grand Gross Total Value</Text>
               <Text style={styles.grandTotalValue}>RWF {(foodInvTotal + drinksInvTotal).toLocaleString()}</Text>
             </View>
           </View>
