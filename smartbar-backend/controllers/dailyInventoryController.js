@@ -3,6 +3,7 @@ const pool = require('../config/db');
 const FOOD_CATEGORIES = ['Bites', 'Pork', 'Brochettes', 'Sides', 'Starters', 'kitchen'];
 const getCategory = (productCategory) => FOOD_CATEGORIES.includes(productCategory) ? 'food' : 'drink';
 
+// Fetches sales numbers from completed order items
 const getSales = async (name, category, date) => {
   const type = category === 'food' ? 'kitchen' : 'drink';
   const r = await pool.query(`
@@ -14,6 +15,7 @@ const getSales = async (name, category, date) => {
   return parseFloat(r.rows[0].total) || 0;
 };
 
+// Calculates previous day's closing stock to roll forward as today's opening stock
 const getPreviousClosing = async (name, category, date) => {
   const yesterday = new Date(date);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -27,65 +29,72 @@ const getPreviousClosing = async (name, category, date) => {
   if (prevRow.rows.length === 0) return 0;
 
   const prevSales = await getSales(name, category, yStr);
-  const opening = parseFloat(prevRow.rows[0].opening_stock);
-  const purchase = parseFloat(prevRow.rows[0].purchase_stock);
-  return opening + purchase - prevSales;
+  const opening = parseFloat(prevRow.rows[0].opening_stock) || 0;
+  const purchase = parseFloat(prevRow.rows[0].purchase_stock) || 0;
+  return Math.max(0, opening + purchase - prevSales);
 };
 
 module.exports = {
   getDailyReport: async (req, res) => {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     try {
+      // 1. Get all base products
       const productsRes = await pool.query('SELECT id, name, price, category FROM products');
       const products = productsRes.rows;
-      const result = [];
 
+      // 2. Loop and guarantee every product has a row placeholder for today with up-to-date sales data
       for (const p of products) {
         const cat = getCategory(p.category);
+        const sales = await getSales(p.name, cat, date);
 
         let row = await pool.query(
           'SELECT * FROM daily_inventory WHERE item_name = $1 AND category = $2 AND record_date = $3',
           [p.name, cat, date]
         );
 
-        let opening, purchase, unit_price;
-
         if (row.rows.length === 0) {
-          opening = await getPreviousClosing(p.name, cat, date);
-          purchase = 0;
-          unit_price = parseFloat(p.price) || 0;
+          const opening = await getPreviousClosing(p.name, cat, date);
+          const unit_price = parseFloat(p.price) || 0;
 
+          // Seed a fresh daily inventory track, capturing sales immediately
           await pool.query(
-            `INSERT INTO daily_inventory (item_name, category, record_date, unit_price, opening_stock, purchase_stock)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (item_name, category, record_date) DO NOTHING`,
-            [p.name, cat, date, unit_price, opening, purchase]
+            `INSERT INTO daily_inventory (item_name, category, record_date, unit_price, opening_stock, purchase_stock, sales)
+             VALUES ($1, $2, $3, $4, $5, 0, $6)
+             ON CONFLICT (item_name, category, record_date) DO UPDATE SET sales = EXCLUDED.sales`,
+            [p.name, cat, date, unit_price, opening, sales]
           );
         } else {
-          opening = parseFloat(row.rows[0].opening_stock);
-          purchase = parseFloat(row.rows[0].purchase_stock);
-          unit_price = parseFloat(row.rows[0].unit_price);
+          // Row already exists; keep sales dynamically synced with current order states
+          await pool.query(
+            `UPDATE daily_inventory SET sales = $1 
+             WHERE item_name = $2 AND category = $3 AND record_date = $4`,
+            [sales, p.name, cat, date]
+          );
         }
-
-        const sales = await getSales(p.name, cat, date);
-        const closing = opening + purchase - sales;
-        const total_price = unit_price * sales;
-
-        result.push({
-          product_id: p.id,
-          name: p.name,
-          category: cat,
-          unit_price,
-          opening_stock: opening,
-          purchase_stock: purchase,
-          sales,
-          closing_stock: closing,
-          total_price
-        });
       }
 
-      const food = result.filter(r => r.category === 'food');
-      const drinks = result.filter(r => r.category === 'drink');
+      // 3. Now, fetch everything from our optimized database view
+      const viewResult = await pool.query(
+        `SELECT * FROM public.v_manager_reconciliation 
+         WHERE record_date = $1 
+         ORDER BY item_name ASC`,
+        [date]
+      );
+
+      // 4. Map DB data rows cleanly for frontend payload distribution
+      const formattedRows = viewResult.rows.map(row => ({
+        name: row.item_name,
+        category: row.category,
+        unit_price: parseFloat(row.unit_price),
+        opening_stock: parseFloat(row.opening_stock),
+        purchase_stock: parseFloat(row.purchase_stock),
+        sales: parseFloat(row.sales),
+        closing_stock: parseFloat(row.closing_stock),
+        total_price: parseFloat(row.total_price)
+      }));
+
+      const food = formattedRows.filter(r => r.category === 'food');
+      const drinks = formattedRows.filter(r => r.category === 'drink');
       const foodTotal = food.reduce((s, r) => s + r.total_price, 0);
       const drinksTotal = drinks.reduce((s, r) => s + r.total_price, 0);
 
