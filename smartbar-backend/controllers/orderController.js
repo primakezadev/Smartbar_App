@@ -24,8 +24,10 @@ const OrderController = {
         const itemQuantity = item.quantity || 1;
         const inventoryId = item.product_id || item.id;
         const itemPrice = item.price || 0;
+        // ✅ Capture special instructions from client
+        const specialInstructions = item.special_instructions || "";
 
-        console.log(`   ↳ ${item.name} | type=${itemType} | qty=${itemQuantity} | inventoryId=${inventoryId}`);
+        console.log(`   ↳ ${item.name} | type=${itemType} | qty=${itemQuantity} | note="${specialInstructions}"`);
 
         const tableName = itemType === 'drink' ? 'drinks_inventory' : 'kitchen_inventory';
 
@@ -47,10 +49,11 @@ const OrderController = {
           [itemQuantity, inventoryId]
         );
 
+        // ✅ Save special_instructions into order_items
         await client.query(
-          `INSERT INTO order_items (order_id, inventory_id, quantity, unit_price, name, type, price)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [orderId, inventoryId, itemQuantity, itemPrice, item.name, itemType, itemPrice]
+          `INSERT INTO order_items (order_id, inventory_id, quantity, unit_price, name, type, price, special_instructions)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [orderId, inventoryId, itemQuantity, itemPrice, item.name, itemType, itemPrice, specialInstructions]
         );
       }
 
@@ -73,7 +76,8 @@ const OrderController = {
                json_agg(json_build_object(
                  'item_id', oi.inventory_id,
                  'name', oi.name,
-                 'quantity', oi.quantity
+                 'quantity', oi.quantity,
+                 'special_instructions', oi.special_instructions
                )) AS items
         FROM orders o
         LEFT JOIN users u ON o.assigned_server_id = u.id
@@ -89,6 +93,7 @@ const OrderController = {
     }
   },
 
+  // ✅ special_instructions included in waiter dashboard items
   getWaiterDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
@@ -98,7 +103,8 @@ const OrderController = {
                  'item_id', oi.inventory_id,
                  'name', oi.name,
                  'quantity', oi.quantity,
-                 'type', oi.type
+                 'type', oi.type,
+                 'special_instructions', oi.special_instructions
                )) AS items
         FROM orders o
         LEFT JOIN users u ON o.assigned_server_id = u.id
@@ -115,6 +121,7 @@ const OrderController = {
     }
   },
 
+  // ✅ special_instructions included in kitchen dashboard items
   getKitchenDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
@@ -122,7 +129,8 @@ const OrderController = {
                u.name AS waiter_name,
                json_agg(json_build_object(
                  'name', oi.name,
-                 'quantity', oi.quantity
+                 'quantity', oi.quantity,
+                 'special_instructions', oi.special_instructions
                )) FILTER (WHERE oi.type = 'kitchen') AS items
         FROM orders o
         LEFT JOIN users u ON o.assigned_server_id = u.id
@@ -141,6 +149,7 @@ const OrderController = {
     }
   },
 
+  // ✅ special_instructions included in bar/counter dashboard items
   getBarDashboard: async (req, res) => {
     try {
       const result = await pool.query(`
@@ -148,7 +157,8 @@ const OrderController = {
                u.name AS waiter_name,
                json_agg(json_build_object(
                  'name', oi.name,
-                 'quantity', oi.quantity
+                 'quantity', oi.quantity,
+                 'special_instructions', oi.special_instructions
                )) FILTER (WHERE oi.type = 'drink') AS items
         FROM orders o
         LEFT JOIN users u ON o.assigned_server_id = u.id
@@ -192,14 +202,8 @@ const OrderController = {
           order_id: row.order_id,
           table_number: row.table_number
         };
-
-        if (row.type === 'kitchen') {
-          food.push(entry);
-          foodTotal += lineTotal;
-        } else {
-          drinks.push(entry);
-          drinksTotal += lineTotal;
-        }
+        if (row.type === 'kitchen') { food.push(entry); foodTotal += lineTotal; }
+        else { drinks.push(entry); drinksTotal += lineTotal; }
       });
 
       res.status(200).json({ success: true, food, drinks, foodTotal, drinksTotal });
@@ -212,44 +216,28 @@ const OrderController = {
   updateStatus: async (req, res) => {
     const { id } = req.params;
     const { server_id, status } = req.body;
-    console.log("=== UPDATE STATUS === Order:", id, "| Server:", server_id, "| Status:", status, "| Role:", req.user?.role);
+    console.log("=== UPDATE STATUS === Order:", id, "| Server:", server_id, "| Status:", status);
 
     try {
       const updatedOrder = await OrderService.claimActiveTicket(id, server_id, status || 'preparing');
-      console.log("Updated:", JSON.stringify(updatedOrder));
-
-      if (!updatedOrder) {
-        return res.status(404).json({ success: false, error: "Order not found." });
-      }
+      if (!updatedOrder) return res.status(404).json({ success: false, error: "Order not found." });
 
       const waiterRes = await pool.query(
-        `SELECT name, phone_number FROM users WHERE id = $1`,
-        [server_id]
+        `SELECT name, phone_number FROM users WHERE id = $1`, [server_id]
       );
       const waiterName = waiterRes.rows[0]?.name || "Your Waiter";
       const waiterPhone = waiterRes.rows[0]?.phone_number || "";
 
-      const orderRes = await pool.query(
-        `SELECT user_id FROM orders WHERE id = $1`,
-        [id]
-      );
+      const orderRes = await pool.query(`SELECT user_id FROM orders WHERE id = $1`, [id]);
       const clientUserId = orderRes.rows[0]?.user_id;
 
       const io = req.app.get('io');
       if (io && clientUserId) {
         io.to(`user_${clientUserId}`).emit('order_claimed_by_waiter', {
-          id: parseInt(id),
-          status: status || 'preparing',
-          waiter_name: waiterName,
-          waiter_phone: waiterPhone
+          id: parseInt(id), status: status || 'preparing',
+          waiter_name: waiterName, waiter_phone: waiterPhone
         });
-        console.log(`📡 Emitted to user_${clientUserId} | Waiter: ${waiterName} | Phone: ${waiterPhone}`);
       }
-
-      const itemCheck = await pool.query(
-        `SELECT inventory_id, name, type FROM order_items WHERE order_id = $1`, [id]
-      );
-      console.log(`Items in order ${id}:`, JSON.stringify(itemCheck.rows));
 
       return res.status(200).json({ success: true, order: updatedOrder });
     } catch (error) {

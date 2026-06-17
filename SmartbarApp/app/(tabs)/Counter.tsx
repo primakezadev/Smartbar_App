@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GlassWater, CheckCircle, RefreshCw, Clock, User, CheckCircle2 } from 'lucide-react-native';
+import { GlassWater, CheckCircle, RefreshCw, Clock, User, CheckCircle2, MessageSquare } from 'lucide-react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const BASE_URL = "https://smartbar-app.onrender.com";
@@ -10,6 +10,7 @@ const { width } = Dimensions.get('window');
 interface OrderItem {
   name: string;
   quantity: number;
+  special_instructions?: string;
 }
 
 interface ActiveOrder {
@@ -29,8 +30,6 @@ export default function CounterDashboard() {
   const fetchDrinksData = async () => {
     try {
       const token = await SecureStore.getItemAsync('userToken');
-      console.log("=== COUNTER FETCH === Token:", token ? "EXISTS" : "❌ MISSING");
-
       const response = await fetch(`${BASE_URL}/api/orders/dashboard/bar`, {
         headers: {
           'ngrok-skip-browser-warning': 'true',
@@ -38,11 +37,7 @@ export default function CounterDashboard() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         }
       });
-
-      console.log("Counter response status:", response.status);
       const data = await response.json();
-      console.log("Counter data:", JSON.stringify(data));
-
       setDrinkOrders(data.success ? (data.tickets || []) : []);
     } catch (error) {
       console.error("Counter fetch failed:", error);
@@ -129,17 +124,13 @@ export default function CounterDashboard() {
                     <Text style={styles.tableText}>T-{item.table_number}</Text>
                   </View>
                   <View style={[styles.statusBadge, styles.badgePreparing]}>
-                    <Text style={[styles.statusText, { color: '#D48135' }]}>
-                      {item.status?.toUpperCase()}
-                    </Text>
+                    <Text style={[styles.statusText, { color: '#D48135' }]}>{item.status?.toUpperCase()}</Text>
                   </View>
                 </View>
                 <View style={styles.timeWrapper}>
                   <Clock size={12} color="#71717A" />
                   <Text style={styles.timeText}>
-                    {item.created_at
-                      ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : '--:--'}
+                    {item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                   </Text>
                 </View>
               </View>
@@ -154,14 +145,26 @@ export default function CounterDashboard() {
               <View style={styles.divider} />
 
               <View style={styles.itemsContainer}>
-                {item.items?.map((drink, idx) => (
-                  <View key={idx} style={styles.itemRowWrapper}>
-                    <View style={styles.quantityContainer}>
-                      <Text style={styles.quantityText}>{drink.quantity}x</Text>
+                {item.items?.map((drink, idx) => {
+                  const hasNote = drink.special_instructions && drink.special_instructions.trim().length > 0;
+                  return (
+                    <View key={idx}>
+                      <View style={styles.itemRowWrapper}>
+                        <View style={styles.quantityContainer}>
+                          <Text style={styles.quantityText}>{drink.quantity}x</Text>
+                        </View>
+                        <Text style={styles.itemNameText}>{drink.name}</Text>
+                      </View>
+                      {/* ✅ Special instructions shown below drink name */}
+                      {hasNote && (
+                        <View style={styles.noteRow}>
+                          <MessageSquare size={11} color="#D48135" />
+                          <Text style={styles.noteText}>{drink.special_instructions}</Text>
+                        </View>
+                      )}
                     </View>
-                    <Text style={styles.itemNameText}>{drink.name}</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
 
               <TouchableOpacity style={styles.btnReady} onPress={() => handleMarkReady(item.order_id)} activeOpacity={0.8}>
@@ -190,7 +193,6 @@ const styles = StyleSheet.create({
   tablePill: { backgroundColor: "#FFF", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   tableText: { color: "#050505", fontSize: 14, fontWeight: "900" },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
-  badgePending: { backgroundColor: "rgba(239, 68, 68, 0.08)", borderColor: "rgba(239, 68, 68, 0.2)" },
   badgePreparing: { backgroundColor: "rgba(212, 129, 53, 0.08)", borderColor: "rgba(212, 129, 53, 0.2)" },
   statusText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
   timeWrapper: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -204,8 +206,11 @@ const styles = StyleSheet.create({
   quantityContainer: { backgroundColor: "rgba(212, 129, 53, 0.1)", minWidth: 28, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(212, 129, 53, 0.15)" },
   quantityText: { color: "#D48135", fontSize: 12, fontWeight: "900" },
   itemNameText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
+  // ✅ Note styles
+  noteRow: { flexDirection: "row", alignItems: "flex-start", gap: 5, marginTop: 4, marginLeft: 40, backgroundColor: "rgba(212,129,53,0.06)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, borderLeftWidth: 2, borderLeftColor: "#D48135" },
+  noteText: { color: "#D48135", fontSize: 11, fontStyle: "italic", flex: 1 },
   btnReady: { backgroundColor: "#D48135", height: 44, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   btnText: { color: "#050505", fontSize: 12, fontWeight: "900", letterSpacing: 0.3 },
   emptyCenter: { paddingVertical: 100, alignItems: "center", justifyContent: "center" },
-  emptyText: { color: "#27272A", textAlign: "center", fontSize: 14, fontWeight: "700" }
+  emptyText: { color: "#27272A", textAlign: "center", fontSize: 14, fontWeight: "700" },
 });
