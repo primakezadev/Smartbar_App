@@ -40,7 +40,7 @@ const SplashScreenComponent: React.FC = () => {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* ✅ Increased opacity from 0.05 to 0.18 */}
+      
       <Image
         source={{ uri: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=800' }}
         style={[styles.bgImage, styles.topLeft]}
@@ -54,10 +54,10 @@ const SplashScreenComponent: React.FC = () => {
         <Text style={styles.emojiIcon}>🍹</Text>
         <Text style={styles.title}>Smartbar</Text>
         <View style={styles.separator} />
-        <Text style={styles.subtitle}>PREMIUM DRINKS EXPERIENCE</Text>
+        <Text style={styles.subtitle}>Raising The Standard Of Every Toast</Text>
       </Animated.View>
 
-      {/* ✅ Loader bar removed entirely */}
+      
     </View>
   );
 };
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: width * 0.7,
     height: width * 0.7,
-    opacity: 0.40, // ← was 0.05
+    opacity: 0.40, 
     borderRadius: 150,
   } as ImageStyle,
   topLeft: { top: -50, left: -50 } as ImageStyle,

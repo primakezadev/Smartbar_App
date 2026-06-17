@@ -1,14 +1,15 @@
-﻿import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Dimensions, Alert, Modal, TextInput, Image
+  ActivityIndicator, Dimensions, Alert, Modal, TextInput, Image,
+  Animated
 } from "react-native";
 import { ShoppingCart, Plus, Minus, X, Bell, User, MessageCircle, Phone } from "lucide-react-native";
 import * as SecureStore from 'expo-secure-store';
 import { io } from "socket.io-client";
 
 const BASE_URL = "https://smartbar-app.onrender.com";
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
 type CategoryType = "overview" | "drinks" | "food" | "rooms";
 
@@ -36,46 +37,179 @@ const decodeBase64 = (input: string) => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
   let str = input.replace(/=+$/, '');
   let output = '';
-  if (str.length % 4 === 1) {
-    throw new Error("'atob' failed: The string to be decoded is not correctly encoded.");
-  }
+  if (str.length % 4 === 1) throw new Error("'atob' failed");
   for (let bc = 0, bs = 0, buffer, i = 0; (buffer = str.charAt(i++)); ) {
     const idx = chars.indexOf(buffer);
     if (idx === -1) continue;
     bs = bc % 4 ? bs * 64 + idx : idx;
-    if (bc++ % 4) {
-      output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)));
-    }
+    if (bc++ % 4) output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)));
   }
   return output;
 };
 
-// ✅ FIX: Save activeOrder per user ID so different clients don't share orders
 const saveActiveOrder = async (order: ActiveOrder | null, userId: string) => {
   try {
-    if (order) {
-      await SecureStore.setItemAsync(`activeOrder_${userId}`, JSON.stringify(order));
-    } else {
-      await SecureStore.deleteItemAsync(`activeOrder_${userId}`);
-    }
-  } catch (e) {
-    console.error("Failed to save activeOrder:", e);
-  }
+    if (order) await SecureStore.setItemAsync(`activeOrder_${userId}`, JSON.stringify(order));
+    else await SecureStore.deleteItemAsync(`activeOrder_${userId}`);
+  } catch (e) { console.error("Failed to save activeOrder:", e); }
 };
 
-// ✅ FIX: Load activeOrder per user ID
 const loadActiveOrder = async (userId: string): Promise<ActiveOrder | null> => {
   try {
     const stored = await SecureStore.getItemAsync(`activeOrder_${userId}`);
     return stored ? JSON.parse(stored) : null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 };
+
+// ── Shuffle helper ────────────────────────────────────────────────────────
+function shuffleArray(arr: ProductItem[]): ProductItem[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ── Auto-scrolling Carousel ───────────────────────────────────────────────
+const CARD_WIDTH = 140;
+const CARD_MARGIN = 12;
+const CARD_STEP = CARD_WIDTH + CARD_MARGIN;
+
+function ProductCarousel({ products, onAddToCart }: {
+  products: ProductItem[];
+  onAddToCart: (item: ProductItem) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const currentOffset = useRef(0);
+  const items = products.slice(0, 10); // up to 10 random items
+
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    const interval = setInterval(() => {
+      const maxOffset = (items.length - 1) * CARD_STEP;
+      const nextOffset = currentOffset.current + CARD_STEP > maxOffset
+        ? 0
+        : currentOffset.current + CARD_STEP;
+
+      scrollRef.current?.scrollTo({ x: nextOffset, animated: true });
+      currentOffset.current = nextOffset;
+    }, 2200);
+
+    return () => clearInterval(interval);
+  }, [items.length]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <View style={carouselStyles.wrapper}>
+      <Text style={carouselStyles.heading}>✨ Featured</Text>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        contentContainerStyle={carouselStyles.scrollContent}
+        onScroll={(e) => { currentOffset.current = e.nativeEvent.contentOffset.x; }}
+      >
+        {items.map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            style={carouselStyles.card}
+            activeOpacity={0.85}
+            onPress={() => {
+              onAddToCart(item);
+              Alert.alert("Added! 🛒", `${item.name} added to cart.`);
+            }}
+          >
+            <Image
+              source={{ uri: item.image && item.image.length > 5 ? item.image : "https://via.placeholder.com/150" }}
+              style={carouselStyles.image}
+            />
+            <View style={carouselStyles.cardBody}>
+              <Text style={carouselStyles.name} numberOfLines={1}>{item.name}</Text>
+              <Text style={carouselStyles.price}>{item.price} RWF</Text>
+              <View style={carouselStyles.addRow}>
+                <Plus size={12} color="#000" />
+                <Text style={carouselStyles.addText}>Add</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+const carouselStyles = StyleSheet.create({
+  wrapper: {
+    marginBottom: 8,
+    paddingTop: 8,
+  },
+  heading: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "800",
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    gap: CARD_MARGIN,
+  },
+  card: {
+    width: CARD_WIDTH,
+    backgroundColor: "#121214",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#1A1A1E",
+    overflow: "hidden",
+  },
+  image: {
+    width: "100%",
+    height: 90,
+    backgroundColor: "#1A1A1E",
+  },
+  cardBody: {
+    padding: 8,
+    gap: 3,
+  },
+  name: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  price: {
+    color: "#D48135",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#D48135",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 4,
+    alignSelf: "flex-start",
+  },
+  addText: {
+    color: "#000",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+});
+// ─────────────────────────────────────────────────────────────────────────
 
 export default function ClientDashboard() {
   const [activeCategory, setActiveCategory] = useState<CategoryType>("overview");
   const [allProducts, setAllProducts] = useState<ProductItem[]>([]);
+  const [carouselProducts, setCarouselProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
@@ -85,7 +219,6 @@ export default function ClientDashboard() {
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>("");
 
-  // ✅ FIX: Load userId first, then load that user's activeOrder only
   useEffect(() => {
     const restoreOrder = async () => {
       try {
@@ -100,21 +233,15 @@ export default function ClientDashboard() {
             console.log(`🔁 Restored activeOrder for user ${userId}:`, JSON.stringify(saved));
           }
         }
-      } catch (e) {
-        console.error("Failed to restore order:", e);
-      }
+      } catch (e) { console.error("Failed to restore order:", e); }
     };
     restoreOrder();
   }, []);
 
-  // ✅ FIX: Save activeOrder per user ID whenever it changes
   useEffect(() => {
-    if (currentUserId) {
-      saveActiveOrder(activeOrder, currentUserId);
-    }
+    if (currentUserId) saveActiveOrder(activeOrder, currentUserId);
   }, [activeOrder, currentUserId]);
 
-  // REST polling fallback in case socket missed the event
   useEffect(() => {
     if (!activeOrder?.id) return;
     if (activeOrder.waiter_name && activeOrder.waiter_name !== 'Finding Waiter...') return;
@@ -128,32 +255,22 @@ export default function ClientDashboard() {
         if (data.success && data.order) {
           const { status, waiter_name, waiter_phone } = data.order;
           if (waiter_name && waiter_name !== activeOrder.waiter_name) {
-            setActiveOrder(prev => prev ? {
-              ...prev,
-              status,
-              waiter_name,
-              waiter_phone: waiter_phone || ""
-            } : prev);
+            setActiveOrder(prev => prev ? { ...prev, status, waiter_name, waiter_phone: waiter_phone || "" } : prev);
           }
         }
-      } catch (e) {
-        // silent fail
-      }
+      } catch (e) {}
     };
 
     const interval = setInterval(pollStatus, 5000);
     return () => clearInterval(interval);
   }, [activeOrder?.id, activeOrder?.waiter_name]);
 
-  // Socket connection for real-time notifications
   useEffect(() => {
     let socket: any;
-
     const setupLiveConnection = async () => {
       try {
         const token = await SecureStore.getItemAsync('userToken');
         if (!token) return;
-
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
         const decodedPayload = decodeBase64(base64);
@@ -161,61 +278,31 @@ export default function ClientDashboard() {
         if (!userData || !userData.userId) return;
 
         socket = io(BASE_URL);
-
         socket.on("connect", () => {
           console.log("🔌 Socket connected for client:", userData.userId);
           socket.emit('register_session', { userId: userData.userId, role: 'client' });
         });
-
-        socket.on('order_claimed_by_waiter', (data: {
-          id: number;
-          status: string;
-          waiter_name: string;
-          waiter_phone: string;
-        }) => {
+        socket.on('order_claimed_by_waiter', (data: { id: number; status: string; waiter_name: string; waiter_phone: string; }) => {
           console.log("🔔 order_claimed_by_waiter:", JSON.stringify(data));
           setActiveOrder(prev => {
-            if (prev && prev.id === data.id) {
-              return {
-                ...prev,
-                status: data.status,
-                waiter_name: data.waiter_name,
-                waiter_phone: data.waiter_phone || ""
-              };
-            }
+            if (prev && prev.id === data.id) return { ...prev, status: data.status, waiter_name: data.waiter_name, waiter_phone: data.waiter_phone || "" };
             return prev;
           });
-          Alert.alert(
-            "Waiter Assigned! 🙋",
-            `${data.waiter_name} will be serving you.\nPhone: ${data.waiter_phone || "N/A"}\n\nOpen notifications for details.`
-          );
+          Alert.alert("Waiter Assigned! 🙋", `${data.waiter_name} will be serving you.\nPhone: ${data.waiter_phone || "N/A"}\n\nOpen notifications for details.`);
         });
-
         socket.on('status_changed', (data: { id: number; status: string }) => {
           setActiveOrder(prev => {
-            if (prev && prev.id === data.id) {
-              return { ...prev, status: data.status };
-            }
+            if (prev && prev.id === data.id) return { ...prev, status: data.status };
             return prev;
           });
-          if (data.status === 'preparing') {
-            Alert.alert("Order Update 👨‍🍳", "Your order is being prepared!");
-          } else if (data.status === 'ready') {
-            Alert.alert("Order Ready! 🍻", "Your waiter is bringing it to your table now.");
-          } else if (data.status === 'completed') {
-            setActiveOrder(null);
-          }
+          if (data.status === 'preparing') Alert.alert("Order Update 👨‍🍳", "Your order is being prepared!");
+          else if (data.status === 'ready') Alert.alert("Order Ready! 🍻", "Your waiter is bringing it to your table now.");
+          else if (data.status === 'completed') setActiveOrder(null);
         });
-
-      } catch (err) {
-        console.error("Socket setup error:", err);
-      }
+      } catch (err) { console.error("Socket setup error:", err); }
     };
-
     setupLiveConnection();
-    return () => {
-      if (socket) socket.disconnect();
-    };
+    return () => { if (socket) socket.disconnect(); };
   }, []);
 
   useEffect(() => {
@@ -226,7 +313,11 @@ export default function ClientDashboard() {
           headers: { "ngrok-skip-browser-warning": "true" }
         });
         const data = await response.json();
-        if (data?.products) setAllProducts(data.products);
+        if (data?.products) {
+          setAllProducts(data.products);
+          // Pick 10 random products for carousel
+          setCarouselProducts(shuffleArray(data.products).slice(0, 10));
+        }
       } catch (error) {
         console.error("Error:", error);
       } finally {
@@ -281,62 +372,33 @@ export default function ClientDashboard() {
   const handleCheckout = async () => {
     if (!tableNumber) return Alert.alert("Required", "Please enter table number.");
     if (cart.length === 0) return Alert.alert("Empty Cart", "Please add items to your cart first.");
-
     setSubmittingOrder(true);
     try {
       const token = await SecureStore.getItemAsync('userToken');
-      if (!token) {
-        return Alert.alert("Authentication Required", "Please log in again.");
-      }
-
+      if (!token) return Alert.alert("Authentication Required", "Please log in again.");
       const totalAmount = cart.reduce((sum, item) => sum + parseFloat(item.price as string) * item.quantity, 0);
-
       const formattedItems = cart.map((item) => {
         const isKitchen = ["Bites", "Pork", "Brochettes", "Sides", "Starters", "kitchen"].includes(item.category);
-        return {
-          product_id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          type: isKitchen ? "kitchen" : "drink",
-          price: parseFloat(item.price as string)
-        };
+        return { product_id: item.id, name: item.name, quantity: item.quantity, type: isKitchen ? "kitchen" : "drink", price: parseFloat(item.price as string) };
       });
-
       const response = await fetch(`${BASE_URL}/api/orders/checkout`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          table_number: tableNumber,
-          items: formattedItems,
-          total_price: totalAmount
-        })
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ table_number: tableNumber, items: formattedItems, total_price: totalAmount })
       });
-
       if (!response.ok) {
         const errText = await response.text();
         throw new Error(`Server returned status ${response.status}: ${errText}`);
       }
-
       const data = await response.json();
-
       if (data.success || data.orderId) {
-        const newOrder: ActiveOrder = {
-          id: data.orderId,
-          status: 'pending',
-          waiter_name: 'Finding Waiter...',
-          waiter_phone: ""
-        };
-        setActiveOrder(newOrder);
+        setActiveOrder({ id: data.orderId, status: 'pending', waiter_name: 'Finding Waiter...', waiter_phone: "" });
         setCart([]);
         setIsCartOpen(false);
         Alert.alert("Order Placed! 🎉", "Finding an available waiter...\n\nCheck notifications for updates.");
       } else {
         Alert.alert("Order Failed", data.message || "The server rejected the order.");
       }
-
     } catch (error: any) {
       console.error("Checkout error:", error);
       Alert.alert("Order Error", error.message || "Failed to reach the Smartbar server.");
@@ -355,16 +417,10 @@ export default function ClientDashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.darkLoaderContainer}>
-        <ActivityIndicator size="large" color="#D48135" />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
+
+      {/* Header icons */}
       <View style={styles.headerRightRow}>
         <View style={styles.headerIcons}>
           <TouchableOpacity style={styles.iconBtn} onPress={() => setIsNotiOpen(true)}>
@@ -382,213 +438,200 @@ export default function ClientDashboard() {
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.navBarContainer}>
-          <ScrollView horizontal contentContainerStyle={styles.navScroll} showsHorizontalScrollIndicator={false}>
-            {(["overview", "drinks", "food", "rooms"] as CategoryType[]).map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.navTab, activeCategory === cat && styles.navTabActive]}
-                onPress={() => setActiveCategory(cat)}
-              >
-                <Text style={[styles.navTabText, activeCategory === cat && styles.navTabTextActive]}>
-                  {cat.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      {loading ? (
+        <View style={styles.darkLoaderContainer}>
+          <ActivityIndicator size="large" color="#D48135" />
         </View>
+      ) : (
+        <>
+          <ScrollView showsVerticalScrollIndicator={false}>
 
-        <View style={styles.gridWrapper}>
-          {filterProducts(allProducts).map((item) => (
-            <View key={item.id} style={styles.itemCard}>
-              <Image
-                source={{ uri: item.image && item.image.length > 5 ? item.image : "https://via.placeholder.com/150" }}
-                style={styles.itemImage}
-              />
-              <View style={styles.cardDetails}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <View style={styles.cardFooter}>
-                  <Text style={styles.itemPrice}>{item.price} RWF</Text>
-                  <TouchableOpacity style={styles.addBtn} onPress={() => addToCart(item)}>
-                    <Plus size={16} color="#D48135" />
+            {/* ── AUTO-SCROLLING CAROUSEL ── */}
+            <ProductCarousel products={carouselProducts} onAddToCart={addToCart} />
+
+            {/* Divider */}
+            <View style={styles.divider} />
+
+            {/* Category nav */}
+            <View style={styles.navBarContainer}>
+              <ScrollView horizontal contentContainerStyle={styles.navScroll} showsHorizontalScrollIndicator={false}>
+                {(["overview", "drinks", "food", "rooms"] as CategoryType[]).map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.navTab, activeCategory === cat && styles.navTabActive]}
+                    onPress={() => setActiveCategory(cat)}
+                  >
+                    <Text style={[styles.navTabText, activeCategory === cat && styles.navTabTextActive]}>
+                      {cat.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Product grid */}
+            <View style={styles.gridWrapper}>
+              {filterProducts(allProducts).map((item) => (
+                <View key={item.id} style={styles.itemCard}>
+                  <Image
+                    source={{ uri: item.image && item.image.length > 5 ? item.image : "https://via.placeholder.com/150" }}
+                    style={styles.itemImage}
+                  />
+                  <View style={styles.cardDetails}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    <View style={styles.cardFooter}>
+                      <Text style={styles.itemPrice}>{item.price} RWF</Text>
+                      <TouchableOpacity style={styles.addBtn} onPress={() => addToCart(item)}>
+                        <Plus size={16} color="#D48135" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.floatingMessage}
+            onPress={() => Alert.alert("Messages", "Messaging feature coming soon!")}
+          >
+            <MessageCircle color="#000" size={24} />
+          </TouchableOpacity>
+
+          {/* CART MODAL */}
+          <Modal visible={isCartOpen} animationType="slide" transparent>
+            <View style={styles.modalBlurOverlay}>
+              <View style={styles.cartModalSheet}>
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Your Cart</Text>
+                  <TouchableOpacity onPress={() => setIsCartOpen(false)}>
+                    <X color="#FFF" size={24} />
                   </TouchableOpacity>
                 </View>
+                <ScrollView>
+                  {cart.length > 0 ? (
+                    cart.map((item) => (
+                      <View key={item.id} style={styles.cartItemRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cartItemName}>{item.name}</Text>
+                          <Text style={styles.cartItemPrice}>{item.price} RWF</Text>
+                        </View>
+                        <View style={styles.cartActionGroup}>
+                          <TouchableOpacity style={styles.qtyBtn} onPress={() => removeFromCart(item.id)}>
+                            <Minus size={14} color="#FFF" />
+                          </TouchableOpacity>
+                          <Text style={styles.cartItemQty}>{item.quantity}</Text>
+                          <TouchableOpacity style={styles.qtyBtn} onPress={() => addToCart(item)}>
+                            <Plus size={14} color="#FFF" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Your cart is currently empty</Text>
+                  )}
+                </ScrollView>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalAmount}>{cartTotal} RWF</Text>
+                </View>
+                <TextInput
+                  style={styles.tableInput}
+                  placeholder="Enter Table Number"
+                  placeholderTextColor="#52525B"
+                  value={tableNumber}
+                  onChangeText={setTableNumber}
+                  keyboardType="numeric"
+                />
+                <TouchableOpacity style={styles.btnSubmitOrder} onPress={handleCheckout} disabled={submittingOrder}>
+                  <Text style={styles.btnSubmitText}>{submittingOrder ? "PLACING..." : "CONFIRM ORDER"}</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          ))}
-        </View>
-      </ScrollView>
+          </Modal>
 
-      <TouchableOpacity
-        style={styles.floatingMessage}
-        onPress={() => Alert.alert("Messages", "Messaging feature coming soon!")}
-      >
-        <MessageCircle color="#000" size={24} />
-      </TouchableOpacity>
-
-      {/* CART MODAL */}
-      <Modal visible={isCartOpen} animationType="slide" transparent>
-        <View style={styles.modalBlurOverlay}>
-          <View style={styles.cartModalSheet}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Your Cart</Text>
-              <TouchableOpacity onPress={() => setIsCartOpen(false)}>
-                <X color="#FFF" size={24} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView>
-              {cart.length > 0 ? (
-                cart.map((item) => (
-                  <View key={item.id} style={styles.cartItemRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.cartItemName}>{item.name}</Text>
-                      <Text style={styles.cartItemPrice}>{item.price} RWF</Text>
-                    </View>
-                    <View style={styles.cartActionGroup}>
-                      <TouchableOpacity style={styles.qtyBtn} onPress={() => removeFromCart(item.id)}>
-                        <Minus size={14} color="#FFF" />
-                      </TouchableOpacity>
-                      <Text style={styles.cartItemQty}>{item.quantity}</Text>
-                      <TouchableOpacity style={styles.qtyBtn} onPress={() => addToCart(item)}>
-                        <Plus size={14} color="#FFF" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>Your cart is currently empty</Text>
-              )}
-            </ScrollView>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalAmount}>{cartTotal} RWF</Text>
-            </View>
-            <TextInput
-              style={styles.tableInput}
-              placeholder="Enter Table Number"
-              placeholderTextColor="#52525B"
-              value={tableNumber}
-              onChangeText={setTableNumber}
-              keyboardType="numeric"
-            />
-            <TouchableOpacity
-              style={styles.btnSubmitOrder}
-              onPress={handleCheckout}
-              disabled={submittingOrder}
-            >
-              <Text style={styles.btnSubmitText}>
-                {submittingOrder ? "PLACING..." : "CONFIRM ORDER"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* NOTIFICATION PANEL */}
-      <Modal visible={isNotiOpen} animationType="slide" transparent>
-        <View style={styles.modalBlurOverlay}>
-          <View style={styles.cartModalSheet}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Order Updates</Text>
-              <TouchableOpacity onPress={() => setIsNotiOpen(false)}>
-                <X color="#FFF" size={24} />
-              </TouchableOpacity>
-            </View>
-
-            {activeOrder ? (
-              <View style={styles.notiContent}>
-
-                <View style={styles.orderInfoRow}>
-                  <Text style={styles.orderIdText}>Order #{activeOrder.id}</Text>
-                  <View style={[
-                    styles.statusPill,
-                    {
-                      backgroundColor: `${getStatusColor(activeOrder.status)}20`,
-                      borderColor: getStatusColor(activeOrder.status)
-                    }
-                  ]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(activeOrder.status) }]}>
-                      {activeOrder.status.toUpperCase()}
-                    </Text>
-                  </View>
+          {/* NOTIFICATION PANEL */}
+          <Modal visible={isNotiOpen} animationType="slide" transparent>
+            <View style={styles.modalBlurOverlay}>
+              <View style={styles.cartModalSheet}>
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Order Updates</Text>
+                  <TouchableOpacity onPress={() => setIsNotiOpen(false)}>
+                    <X color="#FFF" size={24} />
+                  </TouchableOpacity>
                 </View>
-
-                {activeOrder.waiter_name && activeOrder.waiter_name !== 'Finding Waiter...' ? (
-                  <View style={styles.waiterCard}>
-                    <View style={styles.waiterAvatarCircle}>
-                      <User color="#D48135" size={26} />
+                {activeOrder ? (
+                  <View style={styles.notiContent}>
+                    <View style={styles.orderInfoRow}>
+                      <Text style={styles.orderIdText}>Order #{activeOrder.id}</Text>
+                      <View style={[styles.statusPill, { backgroundColor: `${getStatusColor(activeOrder.status)}20`, borderColor: getStatusColor(activeOrder.status) }]}>
+                        <Text style={[styles.statusText, { color: getStatusColor(activeOrder.status) }]}>{activeOrder.status.toUpperCase()}</Text>
+                      </View>
                     </View>
-                    <View style={styles.waiterInfo}>
-                      <Text style={styles.waiterLabel}>YOUR WAITER</Text>
-                      <Text style={styles.waiterName}>{activeOrder.waiter_name}</Text>
-                      {activeOrder.waiter_phone ? (
-                        <View style={styles.phoneRow}>
-                          <Phone size={13} color="#71717A" />
-                          <Text style={styles.waiterPhone}>{activeOrder.waiter_phone}</Text>
+                    {activeOrder.waiter_name && activeOrder.waiter_name !== 'Finding Waiter...' ? (
+                      <View style={styles.waiterCard}>
+                        <View style={styles.waiterAvatarCircle}>
+                          <User color="#D48135" size={26} />
                         </View>
-                      ) : null}
+                        <View style={styles.waiterInfo}>
+                          <Text style={styles.waiterLabel}>YOUR WAITER</Text>
+                          <Text style={styles.waiterName}>{activeOrder.waiter_name}</Text>
+                          {activeOrder.waiter_phone ? (
+                            <View style={styles.phoneRow}>
+                              <Phone size={13} color="#71717A" />
+                              <Text style={styles.waiterPhone}>{activeOrder.waiter_phone}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.searchingCard}>
+                        <ActivityIndicator size="small" color="#D48135" />
+                        <Text style={styles.searchingText}>Finding an available waiter...</Text>
+                      </View>
+                    )}
+                    <View style={styles.timelineContainer}>
+                      {['pending', 'preparing', 'ready'].map((step, index) => {
+                        const statusOrder = ['pending', 'preparing', 'ready', 'completed'];
+                        const currentIndex = statusOrder.indexOf(activeOrder.status);
+                        const stepIndex = statusOrder.indexOf(step);
+                        const isComplete = currentIndex > stepIndex;
+                        const isActive = currentIndex === stepIndex;
+                        return (
+                          <View key={step} style={styles.timelineStep}>
+                            <View style={[styles.timelineDot, isComplete && styles.timelineDotComplete, isActive && styles.timelineDotActive]} />
+                            {index < 2 && <View style={[styles.timelineLine, isComplete && styles.timelineLineComplete]} />}
+                            <Text style={[styles.timelineLabel, (isActive || isComplete) && styles.timelineLabelActive]}>
+                              {step.charAt(0).toUpperCase() + step.slice(1)}
+                            </Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   </View>
                 ) : (
-                  <View style={styles.searchingCard}>
-                    <ActivityIndicator size="small" color="#D48135" />
-                    <Text style={styles.searchingText}>Finding an available waiter...</Text>
+                  <View style={styles.emptyNotiContainer}>
+                    <Bell color="#27272A" size={36} />
+                    <Text style={styles.emptyText}>No active orders</Text>
+                    <Text style={styles.emptySubText}>Your order updates will appear here</Text>
                   </View>
                 )}
-
-                <View style={styles.timelineContainer}>
-                  {['pending', 'preparing', 'ready'].map((step, index) => {
-                    const statusOrder = ['pending', 'preparing', 'ready', 'completed'];
-                    const currentIndex = statusOrder.indexOf(activeOrder.status);
-                    const stepIndex = statusOrder.indexOf(step);
-                    const isComplete = currentIndex > stepIndex;
-                    const isActive = currentIndex === stepIndex;
-                    return (
-                      <View key={step} style={styles.timelineStep}>
-                        <View style={[
-                          styles.timelineDot,
-                          isComplete && styles.timelineDotComplete,
-                          isActive && styles.timelineDotActive
-                        ]} />
-                        {index < 2 && (
-                          <View style={[
-                            styles.timelineLine,
-                            isComplete && styles.timelineLineComplete
-                          ]} />
-                        )}
-                        <Text style={[
-                          styles.timelineLabel,
-                          (isActive || isComplete) && styles.timelineLabelActive
-                        ]}>
-                          {step.charAt(0).toUpperCase() + step.slice(1)}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-
               </View>
-            ) : (
-              <View style={styles.emptyNotiContainer}>
-                <Bell color="#27272A" size={36} />
-                <Text style={styles.emptyText}>No active orders</Text>
-                <Text style={styles.emptySubText}>Your order updates will appear here</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+            </View>
+          </Modal>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#070708" },
-  headerRightRow: { paddingHorizontal: 20, paddingBottom: 8, flexDirection: "row", justifyContent: "flex-end", alignItems: "center" },
+  headerRightRow: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, flexDirection: "row", justifyContent: "flex-end", alignItems: "center" },
   headerIcons: { flexDirection: "row", alignItems: "center", gap: 16 },
   iconBtn: { position: "relative", padding: 4 },
   darkLoaderContainer: { flex: 1, backgroundColor: "#070708", justifyContent: "center", alignItems: "center" },
+  divider: { height: 1, backgroundColor: "#1A1A1E", marginHorizontal: 16, marginBottom: 4 },
   navBarContainer: { paddingVertical: 12 },
   navScroll: { paddingHorizontal: 16, gap: 8 },
   navTab: { backgroundColor: "#121214", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: "#1A1A1E" },

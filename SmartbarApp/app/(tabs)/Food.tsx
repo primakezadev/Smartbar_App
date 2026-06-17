@@ -81,7 +81,6 @@ const FoodScreen = () => {
           <MenuItem 
             name="Fish" 
             price="18,000frws" 
-            // Example of using a web URL
             image={require('../../assets/images/fish.jpg')} 
           />
 
@@ -93,8 +92,7 @@ const FoodScreen = () => {
           />
         </View>
       </ScrollView>
-
-      {/* Floating Button */}
+  
       <TouchableOpacity style={styles.floatButton}>
         <Text style={styles.floatButtonText}>Add to group</Text>
       </TouchableOpacity>

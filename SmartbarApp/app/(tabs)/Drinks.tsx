@@ -19,7 +19,7 @@ const DrinkScreen = () => {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         
-        {/* 1. Hero Image Header (Using Local Image) */}
+        
         <View style={styles.heroContainer}>
           <Image 
             source={require('../../assets/images/beer back.jpg')} 

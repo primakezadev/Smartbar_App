@@ -9,19 +9,19 @@ export default function TabLayout() {
   const router = useRouter();
 
   const handleLogout = async () => {
-    console.log('🔴 LOGOUT BUTTON PRESSED');
+    console.log('LOGOUT BUTTON PRESSED');
     try {
       await SecureStore.deleteItemAsync('userToken').catch(() => {});
       await SecureStore.deleteItemAsync('userRole').catch(() => {});
       await SecureStore.deleteItemAsync('userSession').catch(() => {});
 
-      console.log('🔒 Storage cleared');
+      console.log(' Storage cleared');
 
       if ((global as any).forceRootLogoutSync) {
-        console.log('✅ Calling forceRootLogoutSync...');
+        console.log('Calling forceRootLogoutSync...');
         (global as any).forceRootLogoutSync();
       } else {
-        console.warn('⚠️ forceRootLogoutSync not registered, using fallback');
+        console.warn(' forceRootLogoutSync not registered, using fallback');
         router.replace('/Auth');
       }
     } catch (error) {
@@ -67,8 +67,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     backgroundColor: '#0F1014',
-    zIndex: 999,        // ← ensures header sits above Slot content
-    elevation: 999,     // ← Android equivalent
+    zIndex: 999,    
+    elevation: 999,     
   },
   headerTitle: {
     color: '#FFF',
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 179, 0, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1000,       // ← ensures button is tappable above any child content
+    zIndex: 1000,  
     elevation: 1000,
   },
 });

@@ -94,7 +94,7 @@ export default function CounterDashboard() {
           <Text style={styles.welcomeText}>REALTIME MIXOLOGY MANAGEMENT</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
             <GlassWater color="#D48135" size={24} strokeWidth={2.5} />
-            <Text style={styles.brandTitle}>Bar Counter</Text>
+            <Text style={styles.brandTitle}>Bar Comptoir</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.refreshBtn} onPress={() => { setLoading(true); fetchDrinksData(); }} activeOpacity={0.7}>
