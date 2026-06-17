@@ -4,13 +4,16 @@
     "slug": "SmartbarApp",
     "version": "1.0.0",
     "scheme": "smartbarapp",
+    "owner": "off1",
+    "icon": "./assets/images/icon.png",
     "plugins": [
       "expo-router",
       [
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "kotlinVersion": "2.1.0"
           }
         }
       ],
@@ -28,18 +31,25 @@
       "typedRoutes": true,
       "reactCompiler": false
     },
-    "extra": {
-      "eas": {
-        "projectId": "9975fe68-9187-4603-a42b-b2259c5238cb"
+    "android": {
+      "package": "com.off1.smartbarapp",
+      "icon": "./assets/images/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       }
     },
-    "android": {
-      "package": "com.primaaa.SmartbarApp"
-    },
     "ios": {
-      "bundleIdentifier": "com.primaaa.SmartbarApp",
+      "bundleIdentifier": "com.off1.smartbarapp",
+      "icon": "./assets/images/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "120c89d1-88db-42c1-ab4a-c40bf1abf5e1"
       }
     }
   }
