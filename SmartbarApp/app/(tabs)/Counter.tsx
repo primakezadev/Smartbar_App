@@ -206,7 +206,6 @@ const styles = StyleSheet.create({
   quantityContainer: { backgroundColor: "rgba(212, 129, 53, 0.1)", minWidth: 28, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(212, 129, 53, 0.15)" },
   quantityText: { color: "#D48135", fontSize: 12, fontWeight: "900" },
   itemNameText: { color: "#FFF", fontSize: 15, fontWeight: "600" },
-  // ✅ Note styles
   noteRow: { flexDirection: "row", alignItems: "flex-start", gap: 5, marginTop: 4, marginLeft: 40, backgroundColor: "rgba(212,129,53,0.06)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, borderLeftWidth: 2, borderLeftColor: "#D48135" },
   noteText: { color: "#D48135", fontSize: 11, fontStyle: "italic", flex: 1 },
   btnReady: { backgroundColor: "#D48135", height: 44, borderRadius: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
