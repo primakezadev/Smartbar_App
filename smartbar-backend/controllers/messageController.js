@@ -53,4 +53,4 @@ sendMessage: async (req, res) => {
 
 ;
 
-module.exports = MessageController;
+module.exports = messageController;
