@@ -50,10 +50,12 @@ const OrderController = {
 
         // ✅ Matches your actual order_items columns:
         // id, order_id, product_id, quantity, unit_price, total_price, created_at, special_instructions
+        // NOTE: total_price is a generated column in the DB (quantity * unit_price),
+        // so it must NOT be passed explicitly in the INSERT.
         await client.query(
-          `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price, special_instructions)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [orderId, inventoryId, itemQuantity, itemPrice, itemPrice * itemQuantity, specialInstructions]
+          `INSERT INTO order_items (order_id, product_id, quantity, unit_price, special_instructions)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [orderId, inventoryId, itemQuantity, itemPrice, specialInstructions]
         );
       }
 
