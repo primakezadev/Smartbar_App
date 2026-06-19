@@ -32,7 +32,7 @@ export default function TabLayout() {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}></Text>
+        <Text style={styles.headerTitle}>Smartbar</Text>
 
         <TouchableOpacity
           style={styles.logoutBtn}
