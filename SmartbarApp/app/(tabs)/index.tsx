@@ -302,6 +302,10 @@ export default function ClientDashboard() {
   const [submittingOrder, setSubmittingOrder] = useState<boolean>(false);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>("");
+const [isMessageOpen, setIsMessageOpen] = useState(false);
+const [messageText, setMessageText] = useState("");
+const [messageModalVisible, setMessageModalVisible] = useState(false);
+
 
   useEffect(() => {
     const restoreOrder = async () => {
@@ -479,6 +483,47 @@ export default function ClientDashboard() {
     }
   };
 
+ const sendMessageToManager = async () => {
+  try {
+    const token = await SecureStore.getItemAsync("userToken");
+    
+    // Debug: Check if token exists
+    if (!token) {
+      console.log("No token found!");
+      return;
+    }
+
+    const response = await fetch(`${BASE_URL}/api/messages/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message: messageText }),
+    });
+
+    // Capture the raw response text in case it's not JSON
+    const responseText = await response.text();
+    console.log("Response Status:", response.status);
+    console.log("Response Body:", responseText);
+
+    if (response.ok) {
+      // Parse only if successful
+      const data = JSON.parse(responseText);
+      if (data.success) {
+        Alert.alert("Sent", "Message sent to manager.");
+        setMessageText("");
+        setIsMessageOpen(false);
+      }
+    } else {
+      Alert.alert("Error", `Server responded with ${response.status}`);
+    }
+  } catch (error) {
+    console.error("Fetch error:", error);
+    Alert.alert("Error", "Check console for network details.");
+  }
+};
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRightRow}>
@@ -540,13 +585,12 @@ export default function ClientDashboard() {
             </View>
           </ScrollView>
 
-          <TouchableOpacity
-            style={styles.floatingMessage}
-            onPress={() => Alert.alert("Messages", "Messaging feature coming soon!")}
-          >
-            <MessageCircle color="#000" size={24} />
-          </TouchableOpacity>
-
+    <TouchableOpacity
+  style={styles.floatingMessage}
+  onPress={() => setMessageModalVisible(true)}
+>
+  <MessageCircle color="#000" size={24} />
+</TouchableOpacity>
           {/* ── CART MODAL ── */}
           <Modal visible={isCartOpen} animationType="slide" transparent>
             <View style={styles.modalBlurOverlay}>
@@ -601,6 +645,53 @@ export default function ClientDashboard() {
               </View>
             </View>
           </Modal>
+
+<Modal
+  visible={messageModalVisible}
+  animationType="slide"
+  transparent
+>
+  <View style={styles.modalBlurOverlay}>
+    <View style={styles.cartModalSheet}>
+
+      <View style={styles.modalHeaderRow}>
+        <Text style={styles.modalTitle}>Message Manager</Text>
+
+        <TouchableOpacity onPress={() => setMessageModalVisible(false)}>
+          <X color="#FFF" size={24} />
+        </TouchableOpacity>
+      </View>
+
+      {/* INPUT */}
+      <TextInput
+        placeholder="Type your message..."
+        placeholderTextColor="#666"
+        style={styles.tableInput}
+        value={messageText}
+        onChangeText={setMessageText}
+        multiline
+      />
+
+      {/* SEND BUTTON */}
+      <TouchableOpacity
+        style={{
+          backgroundColor: "#D48135",
+          height: 50,
+          borderRadius: 12,
+          alignItems: "center",
+          justifyContent: "center",
+          marginTop: 10
+        }}
+        onPress={sendMessageToManager}
+      >
+        <Text style={{ color: "#000", fontWeight: "900" }}>
+          SEND MESSAGE
+        </Text>
+      </TouchableOpacity>
+
+    </View>
+  </View>
+</Modal>
 
           {/* ── NOTIFICATION PANEL ── */}
           <Modal visible={isNotiOpen} animationType="slide" transparent>
