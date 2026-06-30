@@ -64,28 +64,6 @@ Food and Drinks get their own tables, each with category totals and a combined g
 - Orders use database transactions with row-level locking, so two people can't oversell the same item at the same time.
 - Stock is checked and decremented atomically when an order is placed — if there isn't enough stock, the order is rejected before it ever reaches the kitchen.
 
-## Project Structure
-
-Smartbar_App-main/
-├── smartbar-backend/
-│   ├── controllers/      # Business logic (orders, products, inventory, auth)
-│   ├── models/            # Database queries
-│   ├── routes/             # API endpoints
-│   ├── middleware/      # Auth & role-based access control
-│   ├── services/           # Shared service logic
-│   └── server.js
-└── SmartbarApp/
-    └── app/
-        ├── (tabs)/
-        │   ├── Manager.tsx
-        │   ├── Kitchen.tsx
-        │   ├── Counter.tsx
-        │   ├── Waiter.tsx
-        │   └── ...
-        ├── Auth.tsx
-        └── index.tsx
-
-
 ## Getting Started
 
 ### Backend
